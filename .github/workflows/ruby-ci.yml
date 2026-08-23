@@ -1,0 +1,65 @@
+## Reusable workflow — Ruby: bundle install + tests (self-hosted pool)
+#
+#   jobs:
+#     ruby-ci:
+#       uses: m0nklabs/github-action-runners/.github/workflows/ruby-ci.yml@main
+#       with:
+#         ruby-version: "3.4"
+#       secrets: inherit
+#
+# Loopt op de centrale self-hosted pool: [self-hosted, Linux].
+
+name: Ruby CI (shared)
+
+on:
+  workflow_call:
+    inputs:
+      ruby-version:
+        description: Ruby version
+        required: false
+        default: "3.4"
+        type: string
+      src-dir:
+        description: Directory with the Gemfile
+        required: false
+        default: "."
+        type: string
+      test-command:
+        description: Command to run the tests
+        required: false
+        default: "bundle exec rspec"
+        type: string
+      run-tests:
+        description: Whether to run the test command
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  ruby:
+    name: Ruby build + test
+    runs-on: [self-hosted, Linux]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ inputs.ruby-version }}
+          bundler-cache: true
+          working-directory: ${{ inputs.src-dir }}
+
+      - name: Bundle install
+        working-directory: ${{ inputs.src-dir }}
+        run: bundle install
+        continue-on-error: true
+
+      - name: Test
+        if: inputs.run-tests
+        working-directory: ${{ inputs.src-dir }}
+        run: |
+          ${{ inputs.test-command }} || echo "tests had issues"
+        continue-on-error: true

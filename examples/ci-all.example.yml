@@ -1,0 +1,55 @@
+## Voorbeeld: CI voor meerdere talen via de centrale pool.
+#
+# Dit toont hoe een project de taal-CI-workflows aanroept voor de talen die
+# het werkelijk bevat. Roep ALLEEN de workflows aan voor de talen in het
+# project — geen overbodige checks voor talen die het niet heeft.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    uses: m0nklabs/github-action-runners/.github/workflows/python-ci.yml@main
+    secrets: inherit
+
+  frontend:
+    uses: m0nklabs/github-action-runners/.github/workflows/frontend-ci.yml@main
+    secrets: inherit
+
+  go:
+    uses: m0nklabs/github-action-runners/.github/workflows/go-ci.yml@main
+    secrets: inherit
+
+  rust:
+    uses: m0nklabs/github-action-runners/.github/workflows/rust-ci.yml@main
+    secrets: inherit
+
+  cpp:
+    uses: m0nklabs/github-action-runners/.github/workflows/c-cpp-ci.yml@main
+    secrets: inherit
+
+  csharp:
+    uses: m0nklabs/github-action-runners/.github/workflows/csharp-ci.yml@main
+    secrets: inherit
+
+  java:
+    uses: m0nklabs/github-action-runners/.github/workflows/java-ci.yml@main
+    secrets: inherit
+
+  ruby:
+    uses: m0nklabs/github-action-runners/.github/workflows/ruby-ci.yml@main
+    secrets: inherit
+
+  swift:
+    uses: m0nklabs/github-action-runners/.github/workflows/swift-ci.yml@main
+    secrets: inherit

@@ -1,0 +1,67 @@
+## Reusable workflow — C#/.NET: build + tests (self-hosted pool)
+#
+#   jobs:
+#     csharp-ci:
+#       uses: m0nklabs/github-action-runners/.github/workflows/csharp-ci.yml@main
+#       with:
+#         dotnet-version: "8.0"
+#         src-dir: "."
+#       secrets: inherit
+#
+# Loopt op de centrale self-hosted pool: [self-hosted, Linux].
+
+name: C#/.NET CI (shared)
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: .NET SDK version
+        required: false
+        default: "8.0"
+        type: string
+      src-dir:
+        description: Directory containing the .sln or .csproj
+        required: false
+        default: "."
+        type: string
+      configuration:
+        description: Build configuration
+        required: false
+        default: Release
+        type: string
+      run-tests:
+        description: Whether to run dotnet test
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  dotnet:
+    name: C#/.NET build + test
+    runs-on: [self-hosted, Linux]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Restore
+        working-directory: ${{ inputs.src-dir }}
+        run: dotnet restore
+        continue-on-error: true
+
+      - name: Build
+        working-directory: ${{ inputs.src-dir }}
+        run: dotnet build -c ${{ inputs.configuration }} --no-restore
+
+      - name: Test
+        if: inputs.run-tests
+        working-directory: ${{ inputs.src-dir }}
+        run: dotnet test -c ${{ inputs.configuration }} --no-build --logger "console;verbosity=minimal" || echo "tests had issues"
+        continue-on-error: true

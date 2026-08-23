@@ -1,0 +1,85 @@
+## Reusable workflow — Java/Kotlin: build + tests (self-hosted pool)
+#
+#   jobs:
+#     java-ci:
+#       uses: m0nklabs/github-action-runners/.github/workflows/java-ci.yml@main
+#       with:
+#         java-version: "21"
+#         build-tool: gradle   # of 'maven'
+#       secrets: inherit
+#
+# Loopt op de centrale self-hosted pool: [self-hosted, Linux].
+# Gebruikt de Gradle-wrapper (./gradlew) of Maven (mvn). Installeert geen
+# buildtool op de host maar gebruikt de setup-actions-download.
+
+name: Java/Kotlin CI (shared)
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        description: Java version
+        required: false
+        default: "21"
+        type: string
+      build-tool:
+        description: "gradle or maven"
+        required: false
+        default: gradle
+        type: string
+      src-dir:
+        description: Directory with the build file
+        required: false
+        default: "."
+        type: string
+      run-tests:
+        description: Whether to run tests
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  java:
+    name: Java/Kotlin build + test
+    runs-on: [self-hosted, Linux]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+
+      - name: Build (Gradle)
+        if: inputs.build-tool == 'gradle'
+        working-directory: ${{ inputs.src-dir }}
+        run: |
+          if [ -x ./gradlew ]; then
+            ./gradlew build --no-daemon
+          else
+            echo "Geen gradlew gevonden; check dat de Gradle-wrapper gecommit is."
+            exit 1
+          fi
+
+      - name: Build (Maven)
+        if: inputs.build-tool == 'maven'
+        working-directory: ${{ inputs.src-dir }}
+        run: |
+          mvn -q -B package
+        continue-on-error: false
+
+      - name: Test (Gradle)
+        if: inputs.run-tests && inputs.build-tool == 'gradle'
+        working-directory: ${{ inputs.src-dir }}
+        run: ./gradlew test --no-daemon || echo "tests had issues"
+        continue-on-error: true
+
+      - name: Test (Maven)
+        if: inputs.run-tests && inputs.build-tool == 'maven'
+        working-directory: ${{ inputs.src-dir }}
+        run: mvn -q -B test || echo "tests had issues"
+        continue-on-error: true

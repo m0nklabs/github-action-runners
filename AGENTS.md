@@ -32,7 +32,8 @@ architectuur.
    bevestigd dat de vervangende pool online en werkend is. Zie "Migratie" onder.
 6. **Generieke workflows taal-specifiek, geen wildgroei per project.** CI-kern
    en SAST horen in de centrale reusable workflows (`.github/workflows/*.yml`:
-   `python-ci`, `frontend-ci`, `go-ci`, `rust-ci`, `gpu-ci`, `codeql-ci`). Een
+   `python-ci`, `frontend-ci`, `go-ci`, `rust-ci`, `c-cpp-ci`, `csharp-ci`,
+   `java-ci`, `ruby-ci`, `swift-ci`, `gpu-ci`, `codeql-ci`). Een
    project linkt **alleen de taal-workflows voor de talen die het werkelijk
    bevat** via
    `uses: m0nklabs/github-action-runners/.github/workflows/<naam>.yml@main`.

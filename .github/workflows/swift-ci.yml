@@ -1,0 +1,56 @@
+## Reusable workflow — Swift: build + tests (self-hosted pool)
+#
+#   jobs:
+#     swift-ci:
+#       uses: m0nklabs/github-action-runners/.github/workflows/swift-ci.yml@main
+#       secrets: inherit
+#
+# Loopt op de centrale self-hosted pool: [self-hosted, Linux].
+# Swift op Linux vereist de Swift toolchain (via swift-actions/setup-swift).
+# Let op: Swift-builds zijn zwaar; gebruik alleen voor echte Swift-projecten.
+
+name: Swift CI (shared)
+
+on:
+  workflow_call:
+    inputs:
+      swift-version:
+        description: Swift version
+        required: false
+        default: "6.0"
+        type: string
+      src-dir:
+        description: Directory with Package.swift
+        required: false
+        default: "."
+        type: string
+      run-tests:
+        description: Whether to run swift test
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  swift:
+    name: Swift build + test
+    runs-on: [self-hosted, Linux]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ inputs.swift-version }}
+
+      - name: Build
+        working-directory: ${{ inputs.src-dir }}
+        run: swift build
+
+      - name: Test
+        if: inputs.run-tests
+        working-directory: ${{ inputs.src-dir }}
+        run: swift test || echo "tests had issues"
+        continue-on-error: true

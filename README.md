@@ -111,8 +111,13 @@ Beschikbare reusable workflows (in `.github/workflows/`):
 | `frontend-ci.yml` | Node/frontend | npm ci + test + build |
 | `go-ci.yml` | Go | vet + test + build |
 | `rust-ci.yml` | Rust | fmt + clippy + test |
+| `c-cpp-ci.yml` | C/C++ | CMake build + ctest |
+| `csharp-ci.yml` | C#/.NET | dotnet restore + build + test |
+| `java-ci.yml` | Java/Kotlin | Gradle/Maven build + test |
+| `ruby-ci.yml` | Ruby | bundle install + test |
+| `swift-ci.yml` | Swift | swift build + test |
 | `gpu-ci.yml` | (GPU) | GPU-tests, serieel via `gpu-run.sh` |
-| `codeql-ci.yml` | (CodeQL) | SAST security-scan per taal (`c-cpp`, `csharp`, `go`, `java-kotlin`, `javascript-typescript`, `python`, `ruby`, `swift`) |
+| `codeql-ci.yml` | (CodeQL) | SAST security-scan per taal — **gratis op publieke repos** (`c-cpp`, `csharp`, `go`, `java-kotlin`, `javascript-typescript`, `python`, `ruby`, `swift`) |
 | `codeql-detect.yml` | (CodeQL auto) | CodeQL met **automatische taal-detectie** (via GitHub languages API, met percentages) — geen handmatige `languages`-input |
 
 ### CodeQL met automatische taal-detectie
@@ -184,9 +189,25 @@ jobs:
 - Elke workflow heeft `inputs` (zie het bestand) om paden, versies en
   opties per project te sturen. **Geen** overbodige taal-checks voor projecten
   die die taal niet hebben.
-- Voorbeelden in `examples/`: `ci.example.yml` (CI), `codeql.example.yml`
-  (CodeQL met handmatige talen) en `codeql-detect.example.yml` (CodeQL met
-  automatische taal-detectie).
+- Voorbeelden in `examples/`: `ci.example.yml` (CI), `ci-all.example.yml`
+  (CI voor álle talen), `codeql.example.yml` (CodeQL met handmatige talen) en
+  `codeql-detect.example.yml` (CodeQL met automatische taal-detectie).
+
+### Gratis CI voor elke taal — privé en publiek
+
+Alle `*-ci.yml`-workflows (Python, Node, Go, Rust, C/C++, C#, Java/Kotlin,
+Ruby, Swift) zijn **vrij te gebruiken op élke repo, publiek én privé** — ze
+draaien op de centrale self-hosted pool met open-source tools en hebben geen
+GitHub-licentie nodig.
+
+**CodeQL (SAST) verschilt hierin:** voor code-scanning was de CodeQL-software
+gratis op **publieke** repos. Op **privé**-repos is CodeQL alleen toegestaan
+met betaald Advanced Security (de CodeQL Terms verbieden gebruik op niet-
+open-source-codebases zonder die licentie). Daarom:
+- Publieke repos → draaien `codeql-detect.yml`/`codeql-ci.yml` (gratis).
+- Privé-repos → al het CI-gemak blijft (gratis), maar géén CodeQL via deze
+  pool. Voor SAST op privé-repos is een andere open-source scanner (bijv.
+  Semgrep) de gratis route, of Advanced Security voor echte CodeQL.
 
 ---
 

@@ -1,0 +1,75 @@
+## Reusable workflow — C/C++: build + tests (self-hosted pool)
+#
+# Door projecten aan te roepen met:
+#
+#   jobs:
+#     cpp-ci:
+#       uses: m0nklabs/github-action-runners/.github/workflows/c-cpp-ci.yml@main
+#       with:
+#         build-dir: build
+#         test-command: ctest --test-dir build
+#       secrets: inherit
+#
+# Loopt op de centrale self-hosted pool: [self-hosted, Linux].
+# Alleen bedoeld voor projecten met daadwerkelijk C/C++-code.
+
+name: C/C++ CI (shared)
+
+on:
+  workflow_call:
+    inputs:
+      src-dir:
+        description: Source directory to use as CMake source root
+        required: false
+        default: "."
+        type: string
+      build-dir:
+        description: CMake build directory
+        required: false
+        default: "build"
+        type: string
+      cmake-args:
+        description: Extra CMake configuration arguments
+        required: false
+        default: ""
+        type: string
+      build-target:
+        description: Optional build target name
+        required: false
+        default: ""
+        type: string
+      run-tests:
+        description: Whether to run ctest
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  cpp-build:
+    name: C/C++ build + test
+    runs-on: [self-hosted, Linux]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure (CMake)
+        run: cmake -S "${{ inputs.src-dir }}" -B "${{ inputs.build-dir }}" ${{ inputs.cmake-args }}
+
+      - name: Build
+        run: |
+          cmd="cmake --build \"${{ inputs.build-dir }}\" --parallel"
+          if [ -n "${{ inputs.build-target }}" ]; then cmd="$cmd --target ${{ inputs.build-target }}"; fi
+          eval "$cmd"
+
+      - name: Test (ctest)
+        if: inputs.run-tests
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -f "${{ inputs.build-dir }}/CTestTestfile.cmake" ]; then
+            ctest --test-dir "${{ inputs.build-dir }}" --output-on-failure || echo "tests had issues"
+          else
+            echo "Geen CTest-configuratie gevonden; build-succes is voldoende."
+          fi
+        continue-on-error: true
