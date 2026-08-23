@@ -1,0 +1,130 @@
+## Reusable workflow — CodeQL met AUTOMATISCHE taal-detectie
+#
+#   jobs:
+#     codeql:
+#       uses: m0nklabs/github-action-runners/.github/workflows/codeql-detect.yml@main
+#       secrets: inherit
+#
+# Detecteert via de GitHub languages API welke CodeQL-talen het project
+# werkelijk bevat (met percentages) en draait CodeQL alleen voor die talen.
+# Geen handmatige `languages`-input nodig.
+#
+# Optioneel: geef `min-percent` mee om talen onder een drempel over te slaan.
+#
+#   with:
+#     min-percent: 1
+#
+# Loopt op de centrale self-hosted pool: [self-hosted, Linux].
+
+name: CodeQL auto-detect (shared)
+
+on:
+  workflow_call:
+    inputs:
+      min-percent:
+        description: Skip languages below this percentage (default 0 = include all CodeQL languages)
+        required: false
+        default: "0"
+        type: string
+      queries:
+        description: Query suite(s), e.g. security-extended
+        required: false
+        default: security-extended
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  detect:
+    name: Detect languages
+    runs-on: [self-hosted, Linux]
+    outputs:
+      languages: ${{ steps.detect.outputs.languages }}
+      summary: ${{ steps.detect.outputs.summary }}
+    steps:
+      - name: Detect CodeQL languages via GitHub API
+        id: detect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          MIN_PCT: ${{ inputs.min-percent }}
+        run: |
+          languages="$(gh api "/repos/${OWNER}/${REPO}/languages")"
+          total="$(echo "$languages" | grep -oE ':[0-9]+' | sed 's/://' | awk '{s+=$1} END{print s}')"
+          declare -A MAP=( [C]="c-cpp" [C++]="c-cpp" [C#]="csharp" [Go]="go" \
+            [Java]="java-kotlin" [Kotlin]="java-kotlin" \
+            [JavaScript]="javascript-typescript" [TypeScript]="javascript-typescript" \
+            [Python]="python" [Ruby]="ruby" [Swift]="swift" )
+          cql=()
+          while IFS=: read -r name bytes; do
+            c="${MAP[$name]:-}"
+            [[ -z "$c" ]] && continue
+            pct=$(awk -v b="$bytes" -v t="$total" 'BEGIN{printf "%.1f", (b/t)*100}')
+            if awk -v p="$pct" -v m="$MIN_PCT" 'BEGIN{exit !(p>=m)}'; then
+              if [[ ! " ${cql[*]} " =~ " ${c} " ]]; then
+                cql+=("$c:${name}:${pct}")
+              fi
+            fi
+          done < <(echo "$languages" | sed 's/[{}]//g; s/"//g; s/,/\n/g' | tr -d ' ' | grep -E '.+:[0-9]+')
+
+          if [[ ${#cql[@]} -eq 0 ]]; then
+            echo "languages=[]" >> "$GITHUB_OUTPUT"
+            echo "summary=No CodeQL-supported languages detected." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Enkele CodeQL-talen (uniek) voor de matrix
+          langs=()
+          for e in "${cql[@]}"; do langs+=("${e%%:*}"); done
+          arr="["
+          for l in "${langs[@]}"; do arr="$arr\"$l\","; done
+          arr="${arr%,}]"
+          echo "languages=$arr" >> "$GITHUB_OUTPUT"
+
+          # Summary met percentages
+          {
+            echo "### 📊 Taalportret (via GitHub languages API)"
+            echo ""
+            for e in "${cql[@]}"; do
+              IFS=: read -r _lang _name _pct <<<"$e"
+              echo "- **$_name** ($_pct%)"
+            done
+            echo ""
+            echo "CodeQL draait voor: \`$arr\`"
+          } > /tmp/languagesummary.txt
+          echo "summary<<EOF" >> "$GITHUB_OUTPUT"
+          cat /tmp/languagesummary.txt >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Print language summary
+        run: |
+          cat /tmp/languagesummary.txt >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "${{ steps.detect.outputs.summary }}"
+
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: [self-hosted, Linux]
+    needs: detect
+    if: needs.detect.outputs.languages != '[]'
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(needs.detect.outputs.languages) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          queries: ${{ inputs.queries }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"

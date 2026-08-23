@@ -1,0 +1,28 @@
+## Voorbeeld: generieke CodeQL (per taal) voor een project.
+#
+# Kopieer naar <project>/.github/workflows/codeql.yml en pas het aan.
+# Geef ALLEEN de talen op die dit project bevat.
+#
+# Ondersteunde CodeQL-talen: c-cpp | csharp | go | java-kotlin |
+# javascript-typescript | python | ruby | swift   (geen Rust)
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  codeql:
+    uses: m0nklabs/github-action-runners/.github/workflows/codeql-ci.yml@main
+    with:
+      # Alleen de talen van dit project:
+      languages: '["python", "javascript-typescript"]'
+      # queries: security-extended   (standaard)
+      # build-mode: none             (standaard; nodig voor compiled talen)
+    secrets: inherit

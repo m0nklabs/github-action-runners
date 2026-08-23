@@ -1,0 +1,26 @@
+## Voorbeeld: CodeQL met automatische taal-detectie voor een project.
+#
+# Kopieer naar <project>/.github/workflows/codeql.yml en het werkt direct:
+# de talen worden via de GitHub languages API gedetecteerd (met percentages)
+# en CodeQL draait alleen voor de talen die het project werkelijk bevat.
+#
+# Optioneel: stel een drempel in om kleine talen over te slaan.
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  codeql:
+    uses: m0nklabs/github-action-runners/.github/workflows/codeql-detect.yml@main
+    with:
+      # min-percent: 1   # skip talen onder 1% van de codebase
+      # queries: security-extended
+    secrets: inherit

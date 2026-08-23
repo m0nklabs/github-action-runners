@@ -99,6 +99,10 @@ Om wildgroei én kwaliteitsverschil per project tegen te gaan, levert deze repo
 **alleen de workflows voor de talen die het werkelijk bevat** — geen overbodige
 checks voor andere talen.
 
+> De centrale repo is **publiek**: projecten kunnen de reusable workflows
+> cross-repo aanroepen met `uses: m0nklabs/github-action-runners/...@main`
+> (cross-repo reusable werkt niet vanuit een privé-repo).
+
 Beschikbare reusable workflows (in `.github/workflows/`):
 
 | Workflow | Taal | Doet |
@@ -108,6 +112,31 @@ Beschikbare reusable workflows (in `.github/workflows/`):
 | `go-ci.yml` | Go | vet + test + build |
 | `rust-ci.yml` | Rust | fmt + clippy + test |
 | `gpu-ci.yml` | (GPU) | GPU-tests, serieel via `gpu-run.sh` |
+| `codeql-ci.yml` | (CodeQL) | SAST security-scan per taal (`c-cpp`, `csharp`, `go`, `java-kotlin`, `javascript-typescript`, `python`, `ruby`, `swift`) |
+| `codeql-detect.yml` | (CodeQL auto) | CodeQL met **automatische taal-detectie** (via GitHub languages API, met percentages) — geen handmatige `languages`-input |
+
+### CodeQL met automatische taal-detectie
+
+De eenvoudigste CodeQL-setup: projecten hoeven de talen niet zelf op te geven.
+`codeql-detect.yml` vraagt de **GitHub languages API** op en laat in het
+linguist-taalportret (met **percentages**) zien welke talen de repo bevat, en
+draait CodeQL alleen voor de talen die het project werkelijk heeft.
+
+```yaml
+jobs:
+  codeql:
+    uses: m0nklabs/github-action-runners/.github/workflows/codeql-detect.yml@main
+    with:
+      min-percent: 1   # optioneel: sla talen onder 1% over
+    secrets: inherit
+```
+
+Lokaal hetzelfde inzicht per repo:
+
+```bash
+./bin/detect-languages.sh m0nklabs/oelala         # alle talen + %
+./bin/detect-languages.sh --codeql m0nklabs/oelala # alleen CodeQL-talen
+```
 
 **Hoe een project de juiste talen aanroept** (bijv. een Python + Node project):
 
@@ -127,6 +156,11 @@ jobs:
     with:
       source-dir: src/frontend
     secrets: inherit
+  codeql:
+    uses: m0nklabs/github-action-runners/.github/workflows/codeql-ci.yml@main
+    with:
+      languages: '["python", "javascript-typescript"]'
+    secrets: inherit
 ```
 
 - Alleen de nodige `uses:`-regels opnemen → een puur Rust-project zet enkel
@@ -134,6 +168,9 @@ jobs:
 - Elke workflow heeft `inputs` (zie het bestand) om paden, versies en
   opties per project te sturen. **Geen** overbodige taal-checks voor projecten
   die die taal niet hebben.
+- Voorbeelden in `examples/`: `ci.example.yml` (CI), `codeql.example.yml`
+  (CodeQL met handmatige talen) en `codeql-detect.example.yml` (CodeQL met
+  automatische taal-detectie).
 
 ---
 
