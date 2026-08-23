@@ -19,10 +19,15 @@ architectuur.
    GPU's/tools). Voeg NOOIT een aparte GPU-runner toe voor een specifiek project.
    Of een job de GPU inzet, bepaalt het project via zijn per-project env/workflow
    (bijv. `CUDA_VISIBLE_DEVICES`), niet via aparte runners.
-3. **Deze repo zelf bevat GEEN secrets.** Nooit runner-registratietokens,
+3. **GPU-jobs lopen SERIEEL (1 tegelijk).** Er is maar 1 centrale GPU-lock
+   (`.gpu.lock` via `bin/gpu-run.sh`). Elke GPU-job moet zijn zware commando's
+   wrappen met `bin/gpu-run.sh`, zodat een volgende GPU-job wacht tot de vorige
+   klaar is. Nooit GPU-werk zonder de lock-wrapper doen — anders concurreren
+   2 jobs op dezelfde kaarten.
+4. **Deze repo zelf bevat GEEN secrets.** Nooit runner-registratietokens,
    `m0nk111-admin.token`, PAT's of andere geheimen in deze repo committen.
    Tokens staan lokaal in `~/.secrets/` en worden opgehaald op gebruikstijd.
-4. **Geen destructieve acties zonder verificatie.** Stoppen/de-registreren/
+5. **Geen destructieve acties zonder verificatie.** Stoppen/de-registreren/
    verwijderen van runners, services of scratch-mappen mag pas NADAT is
    bevestigd dat de vervangende pool online en werkend is. Zie "Migratie" onder.
 

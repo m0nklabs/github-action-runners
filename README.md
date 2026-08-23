@@ -21,6 +21,8 @@ RTX 3060 + RTX 5060 Ti).
 ├── actions-runner-2/                  # runner-installatie (m0nklabs-runner-2)
 ├── actions-runner-3/                  # runner-installatie (m0nklabs-runner-3)
 ├── actions-runner-4/                  # runner-installatie (m0nklabs-runner-4)
+├── bin/
+│   └── gpu-run.sh                     # centrale GPU-lock wrapper (1 GPU-job tegelijk)
 ├── env/
 │   ├── common.github-action-runner.env      # gedeelde basis-omgeving (wordt .env in elke runner)
 │   └── <project>.github-action-runner.env   # VOORBEELD per-project omgeving
@@ -65,21 +67,28 @@ jobs:
       - uses: actions/checkout@v4
 ```
 
-**GPU-jobs:**
+**GPU-jobs (serieel, met centrale lock):**
 ```yaml
 jobs:
   train:
     runs-on: [self-hosted, Linux, gpu]
-    env:
-      CUDA_VISIBLE_DEVICES: "0"
     steps:
       - uses: actions/checkout@v4
+      - name: Train
+        run: |
+          /home/flip/github-action-runners/bin/gpu-run.sh python train.py ...
 ```
 
-> **Let op GPU-verdeling:** alle 4 runners delen dezelfde 2 GPU's
-> (`CUDA_VISIBLE_DEVICES=0,1`). Gebruik in GPU-jobs expliciet `CUDA_VISIBLE_DEVICES`
-> naar één device (of laat de job dat zelf doen), anders concurreren parallelle
-> GPU-jobs om dezelfde GPU's — maximaal 2 zware GPU-jobs tegelijk zonder overboeking.
+> **GPU loopt SERIEEL (1 tegelijk).** Alle 4 runners delen dezelfde 2 GPU's
+> (`CUDA_VISIBLE_DEVICES=0,1`) op dezelfde host. Om te voorkomen dat meerdere
+> GPU-jobs tegelijk op dezelfde kaarten concurreren, moet **elke GPU-job zijn
+> zware commando's wrappen met `bin/gpu-run.sh`**. Dat pakt een centrale lock
+> (`flock` op `.gpu.lock`): als er al een GPU-job bezig is, WACHT de volgende
+> netjes tot die klaar is — er draait nooit meer dan 1 GPU-job tegelijk.
+>
+> ⚠️ Ga bij een GPU-job **altijd** langs `gpu-run.sh`. Anders kunnen twee
+> GPU-jobs (op verschillende runners) parallel op dezelfde kaarten terechtkomen.
+> Wil je één specifieke kaart, gebruik dan `CUDA_VISIBLE_DEVICES` binnenin.
 
 ---
 
@@ -96,9 +105,14 @@ Voorbeeld: **oelala** (GPU + lokaal venv) zou in zijn workflow zetten:
 jobs:
   train:
     runs-on: [self-hosted, Linux, gpu]
-    env:
-      CUDA_VISIBLE_DEVICES: "0"
-      PATH: /home/flip/venvs/gpu/bin:${{ runner.os == 'Linux' && env.PATH || env.PATH }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Train
+        env:
+          CUDA_VISIBLE_DEVICES: "0"
+          PATH: /home/flip/venvs/gpu/bin:${{ runner.os == 'Linux' && env.PATH || env.PATH }}
+        run: |
+          /home/flip/github-action-runners/bin/gpu-run.sh python train.py ...
 ```
 
 > Het `gpu`-label staat op **alle** 4 runners, dus een GPU-job kan op elke runner
