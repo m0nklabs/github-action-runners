@@ -1,0 +1,36 @@
+## Voorbeeld: Semgrep SAST — gratis op élke repo (publiek én privé).
+#
+# Semgrep Core is open-source (LGPL) en werkt ook op privé-repos, in
+# tegenstelling tot CodeQL. Dit is de standaard security-scan voor projecten;
+# op publieke repos kun je daarnaast CodeQL gebruiken.
+#
+#   jobs:
+#     semgrep:
+#       uses: m0nklabs/github-action-runners/.github/workflows/semgrep-ci.yml@main
+#       with:
+#         config: auto            # alle talen; of p/security-audit, p/python, ...
+#         fail-on: none           # findings falen de job niet; je krijgt wel een artifact
+#       secrets: inherit
+
+name: Semgrep SAST
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    uses: m0nklabs/github-action-runners/.github/workflows/semgrep-ci.yml@main
+    with:
+      config: auto
+      fail-on: none
+    secrets: inherit

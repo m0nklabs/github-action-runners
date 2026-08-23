@@ -33,7 +33,7 @@ architectuur.
 6. **Generieke workflows taal-specifiek, geen wildgroei per project.** CI-kern
    en SAST horen in de centrale reusable workflows (`.github/workflows/*.yml`:
    `python-ci`, `frontend-ci`, `go-ci`, `rust-ci`, `c-cpp-ci`, `csharp-ci`,
-   `java-ci`, `ruby-ci`, `swift-ci`, `gpu-ci`, `codeql-ci`). Een
+   `java-ci`, `ruby-ci`, `swift-ci`, `gpu-ci`, `codeql-ci`, `semgrep-ci`). Een
    project linkt **alleen de taal-workflows voor de talen die het werkelijk
    bevat** via
    `uses: m0nklabs/github-action-runners/.github/workflows/<naam>.yml@main`.
@@ -44,7 +44,10 @@ architectuur.
    `permissions: security-events: write` declareren in de caller-workflow;
    zonder die write-permission start de reusable niet (`startup_failure`, 0 jobs).
    Op privé-repos skip `codeql-detect` automatisch (code-scanning vereist daar
-   betaald Advanced Security); op publieke repos is het gratis.
+   betaald Advanced Security); op publieke repos is het gratis. Voor **gratis
+   SAST op élke repo (publiek én privé)** gebruik je `semgrep-ci` — Semgrep Core
+   is open-source (LGPL) en heeft geen GitHub-licentie nodig. Zet liever
+   `semgrep-ci` in op privé-repos dan CodeQL (dat daar toch niet draait).
 7. **Cross-repo reusable werkt alleen publiek.** Om projecten deze workflows te
    laten aanroepen, moet de centrale repo **publiek** blijven. Zet haar nooit
    terug naar privé zonder te beseffen dat cross-repo reusable workflows dan

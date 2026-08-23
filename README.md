@@ -118,6 +118,7 @@ Beschikbare reusable workflows (in `.github/workflows/`):
 | `swift-ci.yml` | Swift | swift build + test |
 | `gpu-ci.yml` | (GPU) | GPU-tests, serieel via `gpu-run.sh` |
 | `codeql-ci.yml` | (CodeQL) | SAST security-scan per taal — **gratis op publieke repos** (`c-cpp`, `csharp`, `go`, `java-kotlin`, `javascript-typescript`, `python`, `ruby`, `swift`) |
+| `semgrep-ci.yml` | (SAST) | **Gratis security-scan op élke repo (publiek + privé)** via Semgrep Core (open-source). `config: auto` scant alle talen, resultaat als JSON-artifact. Werkt waar CodeQL niet gratis kan (privé). |
 | `codeql-detect.yml` | (CodeQL auto) | CodeQL met **automatische taal-detectie** (via GitHub languages API, met percentages) — geen handmatige `languages`-input |
 
 ### CodeQL met automatische taal-detectie
@@ -204,10 +205,14 @@ GitHub-licentie nodig.
 gratis op **publieke** repos. Op **privé**-repos is CodeQL alleen toegestaan
 met betaald Advanced Security (de CodeQL Terms verbieden gebruik op niet-
 open-source-codebases zonder die licentie). Daarom:
-- Publieke repos → draaien `codeql-detect.yml`/`codeql-ci.yml` (gratis).
-- Privé-repos → al het CI-gemak blijft (gratis), maar géén CodeQL via deze
-  pool. Voor SAST op privé-repos is een andere open-source scanner (bijv.
-  Semgrep) de gratis route, of Advanced Security voor echte CodeQL.
+- Publieke repos → draaien `codeql-detect.yml`/`codeql-ci.yml` (gratis) en/of
+  `semgrep-ci.yml`.
+- Privé-repos → al het CI-gemak blijft (gratis) en **SAST via `semgrep-ci.yml`**
+  is ook gratis. **`semgrep-ci.yml` is de standaard security-scan op élke repo
+  (publiek én privé):** Semgrep Core is open-source (LGPL) en heeft geen
+  GitHub-licentie nodig. Het scant automatisch alle talen via `config: auto`,
+  en slaat de resultaten op als JSON-artifact. Alleen echte CodeQL op privé
+  blijft betaald (Advanced Security); voor gratis SAST dataft Semgrep de rol.
 
 ---
 
