@@ -108,7 +108,7 @@ Beschikbare reusable workflows (in `.github/workflows/`):
 | Workflow | Taal | Doet |
 |----------|------|------|
 | `python-ci.yml` | Python | ruff lint + pytest |
-| `frontend-ci.yml` | Node/frontend | npm ci + test + build |
+| `frontend-ci.yml` | JavaScript + TypeScript | npm ci + test + build — **één workflow dekt beide** (JS én TS); zet `source-dir` op de map met de `package.json` (default `src/frontend`) |
 | `go-ci.yml` | Go | vet + test + build |
 | `rust-ci.yml` | Rust | fmt + clippy + test |
 | `c-cpp-ci.yml` | C/C++ | CMake build + ctest |
@@ -161,6 +161,12 @@ Lokaal hetzelfde inzicht per repo:
 ```
 
 **Hoe een project de juiste talen aanroept** (bijv. een Python + Node project):
+
+> **JavaScript + TypeScript** worden door **één** workflow gedekt
+> (`frontend-ci.yml`) en door CodeQL als één taal
+> (`javascript-typescript`). Stel `source-dir` van `frontend-ci` in op de map
+> met de `package.json` — de default is `src/frontend`. Semgrep (`config: auto`)
+> scant `.js`- en `.ts`-bestanden automatisch mee.
 
 ```yaml
 name: CI
