@@ -46,10 +46,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: ${{ inputs.dotnet-version }}
+      - name: Use host .NET SDK (self-hosted)
+        run: |
+          if command -v dotnet >/dev/null 2>&1; then
+            echo "Gebruik host-dotnet: $(dotnet --version)"
+          else
+            echo "Geen dotnet op de runner-host." >&2
+            exit 1
+          fi
 
       - name: Restore
         working-directory: ${{ inputs.src-dir }}
