@@ -45,7 +45,6 @@ jobs:
       languages: ${{ steps.detect.outputs.languages }}
       summary: ${{ steps.detect.outputs.summary }}
       public: ${{ steps.detect.outputs.public }}
-      lang_matrix: ${{ steps.detect.outputs.lang_matrix }}
     steps:
       - name: Detect CodeQL languages via GitHub API
         id: detect
@@ -110,22 +109,14 @@ jobs:
           # build-mode none; gecompileerde talen (C/C++, C#, Go, Java/Kotlin,
           # Swift) → autobuild, anders faalt CodeQL ("could not process any of it").
           langs=()
-          matrix_json="["
+          arr="["
           for e in "${cql[@]}"; do
             l="${e%%:*}"
             langs+=("$l")
-            mode="none"
-            case "$l" in
-              c-cpp|csharp|go|java-kotlin|swift) mode="autobuild" ;;
-            esac
-            matrix_json="$matrix_json{\"language\":\"$l\",\"build-mode\":\"$mode\"},"
+            arr="$arr\"$l\","
           done
-          matrix_json="${matrix_json%,}]"
-          arr="["
-          for l in "${langs[@]}"; do arr="$arr\"$l\","; done
           arr="${arr%,}]"
           echo "languages=$arr" >> "$GITHUB_OUTPUT"
-          echo "lang_matrix=$matrix_json" >> "$GITHUB_OUTPUT"
 
           # Summary met percentages
           {
@@ -157,10 +148,14 @@ jobs:
     needs: detect
     if: needs.detect.outputs.public == 'true' && needs.detect.outputs.languages != '[]'
     timeout-minutes: 40
+    env:
+      # Gecompileerde talen (C/C++, C#, Go, Java/Kotlin, Swift) vereisen een
+      # build (autobuild); geïnterpreteerde talen analyseren zonder build (none).
+      BUILD_MODE: ${{ fromJSON('{"c-cpp":"autobuild","csharp":"autobuild","go":"autobuild","java-kotlin":"autobuild","swift":"autobuild","python":"none","javascript-typescript":"none","ruby":"none"}')[matrix.language] }}
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.detect.outputs.lang_matrix) }}
+        language: ${{ fromJSON(needs.detect.outputs.languages) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -170,7 +165,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           queries: ${{ inputs.queries }}
-          build-mode: ${{ matrix.build-mode }}
+          build-mode: ${{ env.BUILD_MODE }}
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
