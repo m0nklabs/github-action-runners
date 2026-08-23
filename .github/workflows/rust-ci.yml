@@ -1,0 +1,61 @@
+## Reusable workflow — Rust: fmt + clippy + test (self-hosted pool)
+#
+#   jobs:
+#     rust-ci:
+#       uses: m0nklabs/github-action-runners/.github/workflows/rust-ci.yml@main
+#       with:
+#         toolchain: stable
+#         crate-dir: .
+#       secrets: inherit
+#
+# Loopt op de centrale self-hosted pool: [self-hosted, Linux].
+
+name: Rust CI (shared)
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: Rust toolchain (stable/beta/nightly/1.x)
+        required: false
+        default: "stable"
+        type: string
+      crate-dir:
+        description: Directory with the Cargo workspace/crate
+        required: false
+        default: "."
+        type: string
+      run-tests:
+        description: Whether to run cargo test
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  rust-check:
+    name: Rust (fmt + clippy + test)
+    runs-on: [self-hosted, Linux]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        working-directory: ${{ inputs.crate-dir }}
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: ${{ inputs.crate-dir }}
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test
+        if: inputs.run-tests
+        working-directory: ${{ inputs.crate-dir }}
+        run: cargo test --all-features

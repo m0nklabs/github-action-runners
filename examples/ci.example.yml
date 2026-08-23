@@ -1,0 +1,54 @@
+## Voorbeeld: generieke multi-language CI voor een project.
+#
+# Kopieer dit naar <project>/.github/workflows/ci.yml en pas het aan.
+# Regel: link ALLEEN de taal-workflows voor de talen die dit project bevat.
+#
+# - Python + Node project: zoals hieronder (python-ci + frontend-ci).
+# - Puur Go project:            alleen go-ci   + secrets: inherit
+# - Puur Rust project:          alleen rust-ci + secrets: inherit
+# - Project met GPU-tests:      plus gpu-ci (met test-command via gpu-run.sh)
+#
+# Zie README.md in m0nklabs/github-action-runners voor alle inputs.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # --- Alleen opnemen wat dit project nodig heeft ---
+
+  python:
+    uses: m0nklabs/github-action-runners/.github/workflows/python-ci.yml@main
+    with:
+      python-version: "3.12"
+      src-dir: src
+      test-dir: tests
+      lint-path: "src tests"
+    secrets: inherit
+
+  frontend:
+    uses: m0nklabs/github-action-runners/.github/workflows/frontend-ci.yml@main
+    with:
+      node-version: "20"
+      source-dir: src/frontend
+    secrets: inherit
+
+  # Go:
+  #   uses: m0nklabs/github-action-runners/.github/workflows/go-ci.yml@main
+  #   with: { go-version: "1.22" }
+  #   secrets: inherit
+
+  # Rust:
+  #   uses: m0nklabs/github-action-runners/.github/workflows/rust-ci.yml@main
+  #   with: { toolchain: stable }
+  #   secrets: inherit
+
+  # GPU (alleen als dit project GPU-tests heeft):
+  #   uses: m0nklabs/github-action-runners/.github/workflows/gpu-ci.yml@main
+  #   with:
+  #     test-command: "pytest -q tests/gpu/ -m gpu"
+  #   secrets: inherit

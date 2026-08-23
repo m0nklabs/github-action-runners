@@ -1,0 +1,67 @@
+## Reusable workflow — Go: vet + test + build (self-hosted pool)
+#
+#   jobs:
+#     go-ci:
+#       uses: m0nklabs/github-action-runners/.github/workflows/go-ci.yml@main
+#       with:
+#         go-version: "1.22"
+#         module-dir: .
+#       secrets: inherit
+#
+# Loopt op de centrale self-hosted pool: [self-hosted, Linux].
+# Ook als er `go build` nodig is; zet run-build op true.
+
+name: Go CI (shared)
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: Go version
+        required: false
+        default: "1.22"
+        type: string
+      module-dir:
+        description: Directory with the Go module
+        required: false
+        default: "."
+        type: string
+      run-tests:
+        description: Whether to run go test
+        required: false
+        default: true
+        type: boolean
+      run-build:
+        description: Whether to run go build ./...
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  go-check:
+    name: Go (vet + test + build)
+    runs-on: [self-hosted, Linux]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ inputs.go-version }}
+
+      - name: Vet
+        working-directory: ${{ inputs.module-dir }}
+        run: go vet ./...
+
+      - name: Test
+        if: inputs.run-tests
+        working-directory: ${{ inputs.module-dir }}
+        run: go test ./... -race -count=1
+
+      - name: Build
+        if: inputs.run-build
+        working-directory: ${{ inputs.module-dir }}
+        run: go build ./...

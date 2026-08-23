@@ -30,6 +30,13 @@ architectuur.
 5. **Geen destructieve acties zonder verificatie.** Stoppen/de-registreren/
    verwijderen van runners, services of scratch-mappen mag pas NADAT is
    bevestigd dat de vervangende pool online en werkend is. Zie "Migratie" onder.
+6. **Generieke workflows taal-specifiek, geen wildgroei per project.** CI-kern
+   hoort in de centrale reusable workflows (`.github/workflows/*-ci.yml`:
+   `python-ci`, `frontend-ci`, `go-ci`, `rust-ci`, `gpu-ci`). Een project linkt
+   **alleen de taal-workflows voor de talen die het werkelijk bevat** via
+   `uses: m0nklabs/github-action-runners/.github/workflows/<taal>-ci.yml@main`.
+   Draai nooit een Go-check in een puur Rust-project (of omgekeerd). Voeg een
+   nieuwe taal alleen toe als er écht een project-vraag is, niet speculatief.
 
 ## Namen & locaties (vast, consequent houden)
 

@@ -92,6 +92,51 @@ jobs:
 
 ---
 
+## Generieke, taal-specifieke workflows (reusable)
+
+Om wildgroei én kwaliteitsverschil per project tegen te gaan, levert deze repo
+**herbruikbare (reusable) workflows** per programmeertaal. Een project draait
+**alleen de workflows voor de talen die het werkelijk bevat** — geen overbodige
+checks voor andere talen.
+
+Beschikbare reusable workflows (in `.github/workflows/`):
+
+| Workflow | Taal | Doet |
+|----------|------|------|
+| `python-ci.yml` | Python | ruff lint + pytest |
+| `frontend-ci.yml` | Node/frontend | npm ci + test + build |
+| `go-ci.yml` | Go | vet + test + build |
+| `rust-ci.yml` | Rust | fmt + clippy + test |
+| `gpu-ci.yml` | (GPU) | GPU-tests, serieel via `gpu-run.sh` |
+
+**Hoe een project de juiste talen aanroept** (bijv. een Python + Node project):
+
+```yaml
+name: CI
+
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+
+jobs:
+  python:
+    uses: m0nklabs/github-action-runners/.github/workflows/python-ci.yml@main
+    secrets: inherit
+  frontend:
+    uses: m0nklabs/github-action-runners/.github/workflows/frontend-ci.yml@main
+    with:
+      source-dir: src/frontend
+    secrets: inherit
+```
+
+- Alleen de nodige `uses:`-regels opnemen → een puur Rust-project zet enkel
+  `rust-ci.yml`, nooit `python-ci.yml`.
+- Elke workflow heeft `inputs` (zie het bestand) om paden, versies en
+  opties per project te sturen. **Geen** overbodige taal-checks voor projecten
+  die die taal niet hebben.
+
+---
+
 ## Per-project omgeving (bij het project)
 
 Project-specifieke tools/omgeving blijven **bij het project** en worden niet

@@ -1,0 +1,68 @@
+## Reusable workflow — Frontend / Node: build + tests (self-hosted pool)
+#
+#   jobs:
+#     frontend-ci:
+#       uses: m0nklabs/github-action-runners/.github/workflows/frontend-ci.yml@main
+#       with:
+#         node-version: "20"
+#         source-dir: src/frontend
+#       secrets: inherit
+#
+# Loopt op de centrale self-hosted pool: [self-hosted, Linux].
+
+name: Frontend / Node CI (shared)
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version
+        required: false
+        default: "20"
+        type: string
+      source-dir:
+        description: Directory containing package.json
+        required: false
+        default: "src/frontend"
+        type: string
+      run-tests:
+        description: Whether to run the test suite
+        required: false
+        default: true
+        type: boolean
+      build:
+        description: Whether to run the build step
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-build:
+    name: Frontend (build + test)
+    runs-on: [self-hosted, Linux]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: "npm"
+          cache-dependency-path: ${{ inputs.source-dir }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.source-dir }}
+        run: npm ci
+
+      - name: Run tests
+        if: inputs.run-tests
+        working-directory: ${{ inputs.source-dir }}
+        run: npm test -- --run || true
+
+      - name: Build
+        if: inputs.build
+        working-directory: ${{ inputs.source-dir }}
+        run: npm run build

@@ -1,0 +1,65 @@
+## Reusable workflow — GPU-tests (self-hosted pool, GPU serieel)
+#
+#   jobs:
+#     gpu-ci:
+#       uses: m0nklabs/github-action-runners/.github/workflows/gpu-ci.yml@main
+#       with:
+#         test-command: "pytest -q tests/gpu/ -m gpu"
+#       secrets: inherit
+#
+# Regels (zie AGENTS.md):
+#  - loopt op [self-hosted, Linux, gpu]
+#  - zware commando's worden serieel uitgevoerd via de centrale lock
+#    `bin/gpu-run.sh` — 1 GPU-job tegelijk, de rest wacht.
+#
+# Het project bepaalt via `test-command` wát er draait; de centralisatie zorgt
+# voor de juiste labels, GPU-omgeving en serialisatie.
+
+name: GPU CI (shared)
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: Python version for the GPU venv tools
+        required: false
+        default: "3.12"
+        type: string
+      test-command:
+        description: Shell command to run on the GPU (wrapped in gpu-run.sh)
+        required: true
+        type: string
+      setup-command:
+        description: Optional command to run before the GPU command (unlocked)
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  gpu-tests:
+    name: GPU tests
+    runs-on: [self-hosted, Linux, gpu]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup
+        if: inputs.setup-command != ''
+        run: ${{ inputs.setup-command }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install --no-deps -r requirements.txt 2>/dev/null || echo "skip heavy deps"; fi
+
+      # Serieel via de centrale GPU-lock (1 tegelijk over alle 4 runners).
+      - name: Run GPU command (serialized)
+        run: |
+          /home/flip/github-action-runners/bin/gpu-run.sh bash -c '${{ inputs.test-command }}'
