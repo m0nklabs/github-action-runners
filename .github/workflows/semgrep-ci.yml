@@ -1,0 +1,80 @@
+## Reusable workflow — Semgrep SAST (self-hosted pool, gratis op élke repo)
+#
+# Semgrep Core is open-source (LGPL) en gratis — ook op prive-repos, in
+# tegenstelling tot CodeQL. Dit is de standaard security-scan voor projecten
+# waar CodeQL niet gratis kan (prive-repos); op publieke repos kun je ook
+# CodeQL gebruiken.
+#
+#   jobs:
+#     semgrep:
+#       uses: m0nklabs/github-action-runners/.github/workflows/semgrep-ci.yml@main
+#       with:
+#         config: auto   # of: p/security-audit, p/python, een URL, etc.
+#       secrets: inherit
+#
+# Loopt op de centrale self-hosted pool: [self-hosted, Linux].
+
+name: Semgrep SAST (shared)
+
+on:
+  workflow_call:
+    inputs:
+      config:
+        description: "Semgrep ruleset(s), space-separated: auto, p/security-audit, p/best-practices, p/<lang>, a file/URL"
+        required: false
+        default: auto
+        type: string
+      src-dir:
+        description: Directory to scan
+        required: false
+        default: "."
+        type: string
+      fail-on:
+        description: "Fail the job on findings: 'none' (always green), 'error', 'warning'"
+        required: false
+        default: none
+        type: string
+      output-format:
+        description: "terminal, json, sarif"
+        required: false
+        default: terminal
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Semgrep scan (${{ inputs.config }})
+    runs-on: [self-hosted, Linux]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Semgrep (pip, gratis/open-source)
+        run: |
+          python3 -m pip install --quiet --upgrade semgrep || pip install --quiet --upgrade semgrep
+          semgrep --version
+
+      - name: Run Semgrep
+        working-directory: ${{ inputs.src-dir }}
+        env:
+          SEMGREP_RULES: ${{ inputs.config }}
+          SEMGREP_FAIL_ON: ${{ inputs.fail-on }}
+        run: |
+          if [ "$SEMGREP_FAIL_ON" = "none" ]; then
+            semgrep scan --config "$SEMGREP_RULES" --error || echo "Semgrep-findings gevonden (niet-falend per configuratie)."
+          else
+            semgrep scan --config "$SEMGREP_RULES" --error -q --fail-on "$SEMGREP_FAIL_ON"
+          fi
+        continue-on-error: true
+
+      - name: Semgrep JSON artifact
+        if: always()
+        run: |
+          semgrep scan --config "${{ inputs.config }}" --json > semgrep-results.json 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semgrep-results
+          path: semgrep-results.json
+          if-no-files-found: ignore
