@@ -39,6 +39,11 @@ architectuur.
    Draai nooit een Go-check in een puur Rust-project (of omgekeerd), en zet voor
    CodeQL alleen de talen in de `languages`-input die het project heeft. Voeg
    een nieuwe taal alleen toe als er écht een project-vraag is, niet speculatief.
+   **CodeQL-callers** (`codeql-ci`/`codeql-detect`) moeten zelf
+   `permissions: security-events: write` declareren in de caller-workflow;
+   zonder die write-permission start de reusable niet (`startup_failure`, 0 jobs).
+   Op privé-repos skip `codeql-detect` automatisch (code-scanning vereist daar
+   betaald Advanced Security); op publieke repos is het gratis.
 7. **Cross-repo reusable werkt alleen publiek.** Om projecten deze workflows te
    laten aanroepen, moet de centrale repo **publiek** blijven. Zet haar nooit
    terug naar privé zonder te beseffen dat cross-repo reusable workflows dan
