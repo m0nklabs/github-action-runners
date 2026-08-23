@@ -45,6 +45,7 @@ jobs:
       languages: ${{ steps.detect.outputs.languages }}
       summary: ${{ steps.detect.outputs.summary }}
       public: ${{ steps.detect.outputs.public }}
+      lang_matrix: ${{ steps.detect.outputs.lang_matrix }}
     steps:
       - name: Detect CodeQL languages via GitHub API
         id: detect
@@ -88,13 +89,27 @@ jobs:
             exit 0
           fi
 
-          # Enkele CodeQL-talen (uniek) voor de matrix
+          # Enkele CodeQL-talen (uniek) voor de matrix + per taal de build-mode.
+          # Geïnterpreteerde talen (python, javascript-typescript, ruby) →
+          # build-mode none; gecompileerde talen (C/C++, C#, Go, Java/Kotlin,
+          # Swift) → autobuild, anders faalt CodeQL ("could not process any of it").
           langs=()
-          for e in "${cql[@]}"; do langs+=("${e%%:*}"); done
+          matrix_json="["
+          for e in "${cql[@]}"; do
+            l="${e%%:*}"
+            langs+=("$l")
+            mode="none"
+            case "$l" in
+              c-cpp|csharp|go|java-kotlin|swift) mode="autobuild" ;;
+            esac
+            matrix_json="$matrix_json{\"language\":\"$l\",\"build-mode\":\"$mode\"},"
+          done
+          matrix_json="${matrix_json%,}]"
           arr="["
           for l in "${langs[@]}"; do arr="$arr\"$l\","; done
           arr="${arr%,}]"
           echo "languages=$arr" >> "$GITHUB_OUTPUT"
+          echo "lang_matrix=$matrix_json" >> "$GITHUB_OUTPUT"
 
           # Summary met percentages
           {
@@ -120,11 +135,11 @@ jobs:
     runs-on: [self-hosted, Linux]
     needs: detect
     if: needs.detect.outputs.public == 'true' && needs.detect.outputs.languages != '[]'
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        language: ${{ fromJSON(needs.detect.outputs.languages) }}
+        include: ${{ fromJSON(needs.detect.outputs.lang_matrix) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -134,6 +149,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           queries: ${{ inputs.queries }}
+          build-mode: ${{ matrix.build-mode }}
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
