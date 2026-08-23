@@ -71,13 +71,29 @@ jobs:
             [Java]="java-kotlin" [Kotlin]="java-kotlin" \
             [JavaScript]="javascript-typescript" [TypeScript]="javascript-typescript" \
             [Python]="python" [Ruby]="ruby" [Swift]="swift" )
+          # Gecompileerde talen moeten een door de CodeQL-autobuilder herkend
+          # build-systeem hebben, anders kan CodeQL ze niet analyseren en faalt
+          # de run met "No supported build system detected". Detecteer de best-
+          #andenboom één keer en sla zo'n taal over als er geen build-systeem is.
+          buildfiles="$(gh api "/repos/${OWNER}/${REPO}/git/trees/${{ github.sha }}?recursive=1" --jq '.tree[].path' 2>/dev/null || true)"
+          declare -A BUILD=( [c-cpp]="CMakeLists.txt|Makefile|makefile|configure.ac|\.sln|\.slnx|\.vcxproj|\.xcodeproj|WORKSPACE|BUILD.bazel" \
+            [csharp]="\.sln|\.csproj" \
+            [go]="go\.mod" \
+            [java-kotlin]="pom\.xml|build\.gradle|settings\.gradle" \
+            [swift]="Package\.swift|\.xcodeproj" )
           cql=()
+          skipped_compiled=""
           while IFS=: read -r name bytes; do
             c="${MAP[$name]:-}"
             [[ -z "$c" ]] && continue
             pct=$(awk -v b="$bytes" -v t="$total" 'BEGIN{printf "%.1f", (b/t)*100}')
             if awk -v p="$pct" -v m="$MIN_PCT" 'BEGIN{exit !(p>=m)}'; then
               if [[ ! " ${cql[*]} " =~ " ${c} " ]]; then
+                # gecompileerde taal zonder build-systeem overslaan (anders fail)
+                if [[ -n "${BUILD[$c]:-}" ]] && ! echo "$buildfiles" | grep -qE "${BUILD[$c]}"; then
+                  skipped_compiled="$skipped_compiled $c"
+                  continue
+                fi
                 cql+=("$c:${name}:${pct}")
               fi
             fi
@@ -119,6 +135,11 @@ jobs:
               IFS=: read -r _lang _name _pct <<<"$e"
               echo "- **$_name** ($_pct%)"
             done
+            if [[ -n "$skipped_compiled" ]]; then
+              echo ""
+              echo "> ⏭️ Overgeslagen gecompileerde taal zonder CodeQL-build-systeem:"
+              for s in $skipped_compiled; do echo "> - **$s**"; done
+            fi
             echo ""
             echo "CodeQL draait voor: \`$arr\`"
           } > /tmp/languagesummary.txt
