@@ -132,6 +132,29 @@ meegenomen.
 
 ---
 
+## Runner-PATH (belangrijk)
+
+De runner leest het PATH voor job-stappen uit het `.path`-bestand in elke
+runner-installatie (`actions-runner-{1..4}/.path`). `config.sh` schrijft daar
+standaard alleen `~/.npm-global/bin:...:/usr/bin:/bin` in, waardoor **system-wide
+tools in `/usr/local/bin` onzichtbaar zijn** in job-stappen (bv. `gitleaks`,
+`go`).
+
+De centrale pool corrigeert dit naar een compleet generiek PATH:
+
+```
+/home/flip/.npm-global/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/go/bin:
+/usr/local/bin:/home/flip/.local/bin:/home/flip/.cargo/bin:
+/home/flip/.local/share/pnpm:/usr/bin:/bin
+```
+
+`deploy/install-services.sh` zet dit PATH automatisch in elke runner.
+Als een project een tool heeft die buiten dit PATH staat, voeg die dan toe in
+het project (via `env/<project>.github-action-runner.env` of de workflow), niet
+door runner-specifieke ad-hoc-installaties.
+
+---
+
 ## Installatie / herinstallatie (deploy)
 
 ```bash

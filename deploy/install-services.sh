@@ -18,16 +18,23 @@ for i in 1 2 3 4; do
   DIR="${BASE_DIR}/actions-runner-${i}"
   echo "=== systemd-unit voor m0nklabs-runner-${i} ==="
   ( cd "${DIR}" && ./svc.sh install "${USER}" )
+  # Corrigeer het runner-`.path` naar een compleet, generiek PATH. config.sh
+  # schrijft een minimaal PATH zonder /usr/local/bin, waardoor geïnstalleerde
+  # tools (gitleaks, go, e.d.) onzichtbaar zijn in job-stappen. Zie README.
+  FULL_PATH="/home/flip/.npm-global/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/go/bin:/usr/local/bin:/home/flip/.local/bin:/home/flip/.cargo/bin:/home/flip/.local/share/pnpm:/usr/bin:/bin"
+  echo "${FULL_PATH}" > "${DIR}/.path"
+  echo "  -> .path gezet op compleet generiek PATH"
 done
 
 # GPU-drop-in voor ALLE runners: elke runner kan GPU-werk doen (één machine,
 # zelfde GPU's/tools). Via per-project env bepaalt een job of hij de GPU inzet.
+# PATH hier is consistent met het `.path`-bestand hierboven (venvs/gpu voorop).
 for i in 1 2 3 4; do
   DROP="/etc/systemd/system/actions.runner.${ORG}.m0nklabs-runner-${i}.service.d"
   mkdir -p "${DROP}"
-  cat > "${DROP}/90-gpu.conf" <<'EOF'
+  cat > "${DROP}/90-gpu.conf" <<EOF
 [Service]
-Environment="PATH=/usr/local/go/bin:/usr/local/bin:/home/flip/.local/bin:/home/flip/.cargo/bin:/home/flip/venvs/gpu/bin:/usr/bin:/bin"
+Environment="PATH=/home/flip/venvs/gpu/bin:/home/flip/.npm-global/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/go/bin:/usr/local/bin:/home/flip/.local/bin:/home/flip/.cargo/bin:/home/flip/.local/share/pnpm:/usr/bin:/bin"
 Environment="GOPATH=/home/flip/go"
 Environment="GOROOT=/usr/local/go"
 Environment="VIRTUAL_ENV=/home/flip/venvs/gpu"
