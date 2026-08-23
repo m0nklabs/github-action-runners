@@ -8,6 +8,7 @@
 #   ./bin/detect-languages.sh m0nklabs/oelala
 #   ./bin/detect-languages.sh --codeql m0nklabs/oelala
 #   ./bin/detect-languages.sh --json m0nklabs/oelala
+#   ./bin/detect-languages.sh --public m0nklabs/oelala   # alleen publiek? (CodeQL gratis ja/nee)
 #
 # Vereist: gh met een token met leestoegang tot de repo.
 
@@ -15,16 +16,31 @@ set -euo pipefail
 
 CODEQL=0
 JSON=0
+PUBLIC=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --codeql) CODEQL=1; shift ;;
     --json)   JSON=1;   shift ;;
+    --public) PUBLIC=1; shift ;;
     --)       shift; break ;;
     *)        break ;;
   esac
 done
 
 REPO="${1:?geef een repo op als owner/repo (bijv. m0nklabs/oelala)}"
+
+# publiek? (CodeQL/code-scanning is gratis op publieke repos, niet op privé)
+if [[ $PUBLIC -eq 1 ]]; then
+  is_public="$(gh api "/repos/${REPO}" --jq '.private == false' 2>/dev/null || echo "unknown")"
+  if [[ "$is_public" == "true" ]]; then
+    echo "publiek=true (CodeQL gratis mogelijk)"
+  elif [[ "$is_public" == "false" ]]; then
+    echo "publiek=false (CodeQL vereist betaald Advanced Security)"
+  else
+    echo "publiek=unknown (kon niet opvragen)"
+  fi
+  exit 0
+fi
 
 # bytes per taal uit de GitHub API
 if ! languages="$(gh api "/repos/${REPO}/languages")"; then

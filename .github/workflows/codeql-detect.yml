@@ -44,6 +44,7 @@ jobs:
     outputs:
       languages: ${{ steps.detect.outputs.languages }}
       summary: ${{ steps.detect.outputs.summary }}
+      public: ${{ steps.detect.outputs.public }}
     steps:
       - name: Detect CodeQL languages via GitHub API
         id: detect
@@ -53,6 +54,16 @@ jobs:
           REPO: ${{ github.event.repository.name }}
           MIN_PCT: ${{ inputs.min-percent }}
         run: |
+          # CodeQL/code-scanning is gratis op PUBLIEKE repos; op privé-repos
+          # vereist het betaald Advanced Security. Detecteer de privacy zodat
+          # we geen CodeQL-jobs starten die op een privé-repo niet kunnen draaien.
+          is_public="$(gh api "/repos/${OWNER}/${REPO}" --jq '.private == false')"
+          echo "public=$is_public" >> "$GITHUB_OUTPUT"
+          if [ "$is_public" != "true" ]; then
+            echo "languages=[]" >> "$GITHUB_OUTPUT"
+            echo "summary=⚠️ Private repo: CodeQL/code-scanning vereist hier betaald **Advanced Security** (op publieke repos is het gratis). CodeQL overgeslagen." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           languages="$(gh api "/repos/${OWNER}/${REPO}/languages")"
           total="$(echo "$languages" | grep -oE ':[0-9]+' | sed 's/://' | awk '{s+=$1} END{print s}')"
           declare -A MAP=( [C]="c-cpp" [C++]="c-cpp" [C#]="csharp" [Go]="go" \
@@ -108,7 +119,7 @@ jobs:
     name: CodeQL (${{ matrix.language }})
     runs-on: [self-hosted, Linux]
     needs: detect
-    if: needs.detect.outputs.languages != '[]'
+    if: needs.detect.outputs.public == 'true' && needs.detect.outputs.languages != '[]'
     timeout-minutes: 30
     strategy:
       fail-fast: false
