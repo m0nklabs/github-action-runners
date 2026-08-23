@@ -276,7 +276,7 @@ done
 ## Voorwaarden / vereisten
 
 - `gh` CLI geauthenticeerd met een token met `admin:org` scope
-  (bijv. `~/.secrets/github/m0nk111-admin.token`).
+  (bewaar het token veilig lokaal, niet in deze repo).
 - `sudo`-rechten (wachtwoordloos) om systemd-units te installeren.
 - Toegang tot `/home/flip` voor de runner-werkdirs.
 
