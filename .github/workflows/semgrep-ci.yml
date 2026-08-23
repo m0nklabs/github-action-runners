@@ -50,10 +50,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Semgrep (pip, gratis/open-source)
+      - name: Install Semgrep (venv, gratis/open-source)
         run: |
-          python3 -m pip install --quiet --upgrade semgrep || pip install --quiet --upgrade semgrep
-          semgrep --version
+          # host-python (homebrew) is PEP 668 externally-managed: pip system-wide
+          # weigert. Installeer semgrep in een schrijfbaar venv in de runner
+          # tool-cache i.p.v. het systeem te vervuilen.
+          VENV="$RUNNER_TOOL_CACHE/semgrep-venv"
+          python3 -m venv "$VENV"
+          "$VENV/bin/pip" install --quiet --upgrade semgrep
+          "$VENV/bin/semgrep" --version
+          echo "$VENV/bin" >> "$GITHUB_PATH"
 
       - name: Run Semgrep
         working-directory: ${{ inputs.src-dir }}
