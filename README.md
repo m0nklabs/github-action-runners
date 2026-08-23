@@ -131,6 +131,22 @@ jobs:
     secrets: inherit
 ```
 
+> ⚠️ **Belangrijk:** de caller van een CodeQL-workflow (zowel `codeql-detect.yml`
+> als `codeql-ci.yml`) moet zelf `permissions: security-events: write`
+> declareren. Zonder die write-permission weigert GitHub de reusable te starten
+> met `startup_failure` (0 jobs, geen log). Zet bovenaan de workflow:
+>
+> ```yaml
+> permissions:
+>   actions: read
+>   contents: read
+>   security-events: write
+> ```
+>
+> Dit is nodig op **publieke** repos (gratis code-scanning). Op **privé**-repos
+> vereist code-scanning betaald Advanced Security; `codeql-detect.yml` detecteert
+> dat en slaat automatisch over (`languages=[]`) wanneer de repo privé is.
+
 Lokaal hetzelfde inzicht per repo:
 
 ```bash
