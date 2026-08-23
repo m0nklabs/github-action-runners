@@ -20,8 +20,9 @@ for i in 1 2 3 4; do
   ( cd "${DIR}" && ./svc.sh install "${USER}" )
 done
 
-# GPU-drop-ins voor de GPU-capabele runners
-for i in 1 2; do
+# GPU-drop-in voor ALLE runners: elke runner kan GPU-werk doen (één machine,
+# zelfde GPU's/tools). Via per-project env bepaalt een job of hij de GPU inzet.
+for i in 1 2 3 4; do
   DROP="/etc/systemd/system/actions.runner.${ORG}.m0nklabs-runner-${i}.service.d"
   mkdir -p "${DROP}"
   cat > "${DROP}/90-gpu.conf" <<'EOF'

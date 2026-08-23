@@ -3,11 +3,11 @@
 # Install-runner.sh — registreer een self-hosted runner bij GitHub (org-level).
 #
 # Gebruik (org-scope, "default pool"):
-#   ./install-runner.sh <nummer> [--gpu]
+#   ./install-runner.sh <nummer> [--no-gpu]
 #
 # Voorbeelden:
-#   ./install-runner.sh 1          # registreer m0nklabs-runner-1 (generic ci)
-#   ./install-runner.sh 2 --gpu    # registreer m0nklabs-runner-2 (ci + gpu)
+#   ./install-runner.sh 1            # registreer m0nklabs-runner-1 (standaard gpu)
+#   ./install-runner.sh 1 --no-gpu   # registreer m0nklabs-runner-1 zonder gpu-label
 #
 # Vereisten:
 #   - gh CLI geauthenticeerd met een token met admin:org scope
@@ -15,8 +15,9 @@
 #
 # Labels:
 #   - basislabels (automatisch): self-hosted, Linux, X64
-#   - verplicht label "ci"  -> elke runner is bruikbaar voor generieke jobs
-#   - optioneel label "gpu" -> alleen gezet met --gpu (GPU-capabele runner)
+#   - label "gpu" -> standaard op ELKE runner: alle runners kunnen GPU-werk doen
+#     (één machine, zelfde GPU's/tools). Via per-project env bepaalt een job of
+#     hij de GPU inzet. Gebruik --no-gpu om af te wijken.
 #
 # De pool is ORG-LEVEL: runners werken voor ALLE projecten in de org (en op
 # verzoek ook voor privé-accounts). Er is dus GEEN per-project runner nodig.
@@ -25,8 +26,8 @@ set -euo pipefail
 ORG="m0nklabs"
 BASE_DIR="/home/flip/github-action-runners"
 NUM="${1:?geef runner-nummer (1..4)}"
-GPU=""
-if [[ "${2:-}" == "--gpu" ]]; then GPU="--labels gpu"; fi
+GPU="--labels gpu"
+if [[ "${2:-}" == "--no-gpu" ]]; then GPU=""; fi
 
 RUNNER_DIR="${BASE_DIR}/actions-runner-${NUM}"
 NAME="m0nklabs-runner-${NUM}"

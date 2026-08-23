@@ -38,13 +38,15 @@ RTX 3060 + RTX 5060 Ti).
 |--------|-------------|--------|-----|------------------|
 | 1 | `m0nklabs-runner-1` | `self-hosted, Linux, X64, gpu` | ✅ GPU 0+1 | `actions.runner.m0nklabs.m0nklabs-runner-1.service` |
 | 2 | `m0nklabs-runner-2` | `self-hosted, Linux, X64, gpu` | ✅ GPU 0+1 | `actions.runner.m0nklabs.m0nklabs-runner-2.service` |
-| 3 | `m0nklabs-runner-3` | `self-hosted, Linux, X64` | ❌ | `actions.runner.m0nklabs.m0nklabs-runner-3.service` |
-| 4 | `m0nklabs-runner-4` | `self-hosted, Linux, X64` | ❌ | `actions.runner.m0nklabs.m0nklabs-runner-4.service` |
+| 3 | `m0nklabs-runner-3` | `self-hosted, Linux, X64, gpu` | ✅ GPU 0+1 | `actions.runner.m0nklabs.m0nklabs-runner-3.service` |
+| 4 | `m0nklabs-runner-4` | `self-hosted, Linux, X64, gpu` | ✅ GPU 0+1 | `actions.runner.m0nklabs.m0nklabs-runner-4.service` |
 
-> Runner-1 en runner-2 hebben een extra `gpu`-label **en** een systemd-drop-in
-> met GPU-omgeving (`CUDA_VISIBLE_DEVICES=0,1`, `venvs/gpu`). Dat maakt GPU
-> **optioneel per runner**: alleen jobs die het `gpu`-label targeten landen op
-> een GPU-runner; alle andere jobs verdelen zich over de hele pool.
+> **Alle 4 runners zijn GPU-capabel.** Het zijn 4 processen op dezelfde machine
+> (`ai-kvm2`) met dezelfde 2 GPU's (RTX 3060 + RTX 5060 Ti) en dezelfde tools —
+> GPU-capabel maken kost dus géén extra schijf/hardware. Elke runner heeft het
+> `gpu`-label én een systemd-drop-in met GPU-omgeving (`CUDA_VISIBLE_DEVICES=0,1`,
+> `venvs/gpu`). **Of** een job de GPU-ability inzet, bepaalt het project via zijn
+> per-project env/workflow — niet via aparte runners.
 
 ---
 
@@ -74,10 +76,10 @@ jobs:
       - uses: actions/checkout@v4
 ```
 
-> **Let op GPU-verdeling:** de twee GPU-runners delen dezelfde 2 GPU's
+> **Let op GPU-verdeling:** alle 4 runners delen dezelfde 2 GPU's
 > (`CUDA_VISIBLE_DEVICES=0,1`). Gebruik in GPU-jobs expliciet `CUDA_VISIBLE_DEVICES`
-> naar één device (of laat de job dat zelf doen), anders concurreren twee parallelle
-> GPU-jobs om dezelfde GPU's.
+> naar één device (of laat de job dat zelf doen), anders concurreren parallelle
+> GPU-jobs om dezelfde GPU's — maximaal 2 zware GPU-jobs tegelijk zonder overboeking.
 
 ---
 
@@ -99,6 +101,10 @@ jobs:
       PATH: /home/flip/venvs/gpu/bin:${{ runner.os == 'Linux' && env.PATH || env.PATH }}
 ```
 
+> Het `gpu`-label staat op **alle** 4 runners, dus een GPU-job kan op elke runner
+> landen. Het per-project env-bestand (of workflow-`env`-blok) bepaalt vervolgens
+> wát er met de GPU-ability gebeurt.
+
 Geen wildgroei aan runners — alleen project-specificke config wordt per project
 meegenomen.
 
@@ -116,8 +122,8 @@ GH_TOKEN=... ./provision/install-all.sh        # (draait sudo intern)
 
 Of handmatig:
 ```bash
-# één runner registreren (org-level):
-./provision/install-runner.sh 1 --gpu
+# één runner registreren (org-level, standaard gpu-capabel):
+./provision/install-runner.sh 1
 
 # services aanmaken + starten:
 sudo ./deploy/install-services.sh

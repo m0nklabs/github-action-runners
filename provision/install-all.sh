@@ -7,9 +7,9 @@ set -euo pipefail
 BASE_DIR="/home/flip/github-action-runners"
 cd "${BASE_DIR}"
 
-# 1) registreer 4 org-level runners; runner-1 en runner-2 zijn GPU-capabel
-./provision/install-runner.sh 1 --gpu
-./provision/install-runner.sh 2 --gpu
+# 1) registreer 4 org-level runners; alle zijn GPU-capabel (gpu-label)
+./provision/install-runner.sh 1
+./provision/install-runner.sh 2
 ./provision/install-runner.sh 3
 ./provision/install-runner.sh 4
 

@@ -14,9 +14,11 @@ architectuur.
 
 1. **Altijd org-level runners.** Voeg NOOIT een aparte runner per project toe.
    Alle projecten bedienen dezelfde 4 runners.
-2. **GPU is optioneel per runner, niet per project.** Voeg geen nieuwe GPU-runner
-   toe voor een specifiek project. Gebruik de bestaande `gpu`-gelabelde runners
-   (runner-1, runner-2) en project-specifieke env in het project zelf.
+2. **Alle runners zijn GPU-capabel; GPU-keuze hoort bij het project.** Alle 4
+   runners hebben het `gpu`-label en de GPU-omgeving (één machine, zelfde
+   GPU's/tools). Voeg NOOIT een aparte GPU-runner toe voor een specifiek project.
+   Of een job de GPU inzet, bepaalt het project via zijn per-project env/workflow
+   (bijv. `CUDA_VISIBLE_DEVICES`), niet via aparte runners.
 3. **Deze repo zelf bevat GEEN secrets.** Nooit runner-registratietokens,
    `m0nk111-admin.token`, PAT's of andere geheimen in deze repo committen.
    Tokens staan lokaal in `~/.secrets/` en worden opgehaald op gebruikstijd.
@@ -33,8 +35,7 @@ architectuur.
 
 ## Veilige workflows (gebruik deze scripts, niet handmatig gedoe)
 
-- Nieuwe runner registreren: `./provision/install-runner.sh <n> [--gpu]`
-  (haalt zelf een fresh registratietoken op via `gh` — nooit token handmatig hardcoden)
+- Nieuwe runner registreren: `./provision/install-runner.sh <n>` (standaard gpu-capabel; `--no-gpu` om af te wijken). Haalt zelf een fresh registratietoken op via `gh` — nooit token handmatig hardcoden.
 - Services aanmaken/starten: `sudo ./deploy/install-services.sh`
 - Alles in één keer: `GH_TOKEN=... ./provision/install-all.sh`
 - Verwijderen: `sudo ./deploy/uninstall-all.sh` (destructief — zie regel 4)
