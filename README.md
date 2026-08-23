@@ -98,7 +98,15 @@ Project-specifieke tools/omgeving blijven **bij het project** en worden niet
 geschaard per runner. Conventie: een bestand `<project>.github-action-runner.env`
 in de centrale `env/`-map, maar de *inhoud* wordt toegepast in het project zelf
 (bijv. een `env`-blok in de workflow, of door het bestand te sourcen in een
-stap). Zie `env/oelala.github-action-runner.env` als voorbeeld.
+stap).
+
+De `env/`-map bevat:
+- `common.github-action-runner.env` — de gedeelde basis die als `.env` in elke
+  runner-installatie wordt gelegd.
+- `TEMPLATE.github-action-runner.env` — generiek sjabloon om per project te
+  kopiëren (venv's, toolchains, GPU, project-variabelen).
+- `<project>.github-action-runner.env` — concrete per-project voorbeelden,
+  zoals `oelala.github-action-runner.env`.
 
 Voorbeeld: **oelala** (GPU + lokaal venv) zou in zijn workflow zetten:
 ```yaml
