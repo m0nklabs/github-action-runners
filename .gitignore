@@ -1,0 +1,20 @@
+# Runner-installaties zelf (systeem-binaries + werkdirs) horen NIET in git.
+# Alleen configuratie, provisioning-scripts en env-bestanden worden geversioned.
+actions-runner-*/
+
+# runner-binaries/downloads
+actions-runner-linux-x64-*.tar.gz
+
+# werkdirs van de runners
+_work/
+
+# gegenereerde/lokale bestanden die nooit gecommit mogen worden
+**/.runner
+**/.path
+**/.env
+**/.credentials
+**/.credentials_rsaparams
+**/.service
+**/runsvc.sh
+**/svc.sh
+*.log
