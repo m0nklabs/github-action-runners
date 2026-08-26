@@ -107,7 +107,7 @@ Beschikbare reusable workflows (in `.github/workflows/`):
 
 | Workflow | Taal | Doet |
 |----------|------|------|
-| `python-ci.yml` | Python | ruff lint + pytest |
+| `python-ci.yml` | Python | ruff lint + pytest (**strict**; `allow-test-failures: true` = fail-open) |
 | `frontend-ci.yml` | JavaScript + TypeScript | npm ci + test + build — **één workflow dekt beide** (JS én TS); zet `source-dir` op de map met de `package.json` (default `src/frontend`) |
 | `go-ci.yml` | Go | vet + test + build |
 | `rust-ci.yml` | Rust | fmt + clippy + test |

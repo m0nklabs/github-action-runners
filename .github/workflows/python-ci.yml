@@ -9,10 +9,13 @@
 #         python-version: "3.12"
 #         src-dir: src
 #         test-dir: tests
+#         allow-test-failures: false   # default: failing tests -> rode check (strict)
 #       secrets: inherit
 #
 # Loopt op de centrale self-hosted pool: [self-hosted, Linux].
 # Alleen bedoeld voor projecten met daadwerkelijk Python-code.
+# Default is STRICT: een falende pytest-suite maakt de check rood. Zet alleen
+# `allow-test-failures: true` voor projecten met bekende/deferred test-failures.
 
 name: Python CI (shared)
 
@@ -43,6 +46,11 @@ on:
         description: Whether to run pytest
         required: false
         default: true
+        type: boolean
+      allow-test-failures:
+        description: "When true, a failing pytest suite does NOT fail the job (fail-open). Default false = strict: failing tests make the check red. Only set true for projects with known/deferred test failures."
+        required: false
+        default: false
         type: boolean
 
 permissions:
@@ -87,5 +95,9 @@ jobs:
       - name: Run pytest
         working-directory: ${{ github.workspace }}
         run: |
-          python -m pytest ${{ inputs.test-dir }} -q --tb=short || echo "tests had issues"
-        continue-on-error: true
+          if [ "${{ inputs.allow-test-failures }}" = "true" ]; then
+            python -m pytest ${{ inputs.test-dir }} -q --tb=short || echo "tests had issues (fail-open: allow-test-failures=true)"
+          else
+            python -m pytest ${{ inputs.test-dir }} -q --tb=short
+          fi
+        continue-on-error: ${{ inputs.allow-test-failures }}

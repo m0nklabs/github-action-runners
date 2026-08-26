@@ -37,7 +37,11 @@ architectuur.
    project linkt **alleen de taal-workflows voor de talen die het werkelijk
    bevat** via
    `uses: m0nklabs/github-action-runners/.github/workflows/<naam>.yml@main`.
-   Draai nooit een Go-check in een puur Rust-project (of omgekeerd), en zet voor
+   `python-ci` is **strict**: een falende pytest-suite maakt de check rood. Zet
+   `allow-test-failures: true` alleen voor projecten met bekende/deferred
+   test-failures — en verwijder het zodra die gefixt zijn, niet als permanente
+   ontsnapping. Draai nooit een Go-check in een puur Rust-project (of
+   omgekeerd), en zet voor
    CodeQL alleen de talen in de `languages`-input die het project heeft. Voeg
    een nieuwe taal alleen toe als er écht een project-vraag is, niet speculatief.
    **CodeQL-callers** (`codeql-ci`/`codeql-detect`) moeten zelf
