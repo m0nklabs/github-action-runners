@@ -75,6 +75,14 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "${{ inputs.commit-message }}"
-          git push origin "${{ github.head_ref }}"
+          # Push with a real user PAT (AUTOFIX_PAT) when available — commits pushed
+          # with GITHUB_TOKEN do NOT trigger new workflow runs (GitHub security
+          # rule). Fall back to GITHUB_TOKEN only when the PAT secret is absent.
+          if [ -n "${AUTOFIX_PAT:-}" ]; then
+            git push "https://x-access-token:${AUTOFIX_PAT}@github.com/${GITHUB_REPOSITORY}.git" "${{ github.head_ref }}"
+          else
+            git push origin "${{ github.head_ref }}"
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTOFIX_PAT: ${{ secrets.AUTOFIX_PAT }}
