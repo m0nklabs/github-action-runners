@@ -9,6 +9,17 @@ RTX 3060 + RTX 5060 Ti).
 > project** meer. Project-specifieke omgeving wordt per project aangeleverd via
 > een env-bestand (zie hieronder), niet door aparte runners te draaien.
 
+> **Uitzondering — `m0nk111` repo-level runners (PR-Piet).** Het user-account
+> `m0nk111` is géén org, en GitHub biedt géén account-level runner-pools — dus
+> voor de `m0nk111/<repo>`-repos zijn **repo-level** runners de enige optie.
+> Deze staan onder `/home/flip/github-action-runners-m0nk111/run-<repo>` (naam
+> `m0nk111-<repo>-runner`, labels `self-hosted, Linux`, systemd-unit
+> `actions.runner.m0nk111-<repo>.m0nk111-<repo>-runner.service`), elk met een
+> repo-secret `GUARDIAN_API_KEY` (de pr-piet gateway key). Ze draaien PR-Piet
+> (single-call review). Dit is de enige uitzondering op het org-level-principe;
+> dit werd bewust gedaan op verzoek (2026-08-27) en moet niet voor andere
+> accounts/repos gekopieerd worden zonder expliciete aanleiding.
+
 ---
 
 ## Doelarchitectuur
@@ -371,3 +382,18 @@ Voorheen stonden runners verspreid over project-specifieke `scratch/`-bomen
 (org-runners + een repo-runner `oelala-gpu` en een nu verwijderde
 `oelala-storage-runner`). Deze centrale pool vervangt die: **4 org-level
 runners, één plek, één naamgevingsconventie, GPU optioneel per runner.**
+
+---
+
+## PR-Piet op m0nklabs en m0nk111 (2026-08-27)
+
+Alle **49** repos (27 m0nklabs + 22 m0nk111) draaien PR-Piet via
+`m0nklabs/pr-piet/.github/workflows/reusable-pr-piet.yml@main` met
+`single_call_review: true` (1 modelcall voor review + suggesties via de
+pr-agent fork `m0nklabs/pr-agent`).
+
+- **m0nklabs-repos:** draaien op deze org-pool (runners + org-secret
+  `GUARDIAN_API_KEY`, visibility=all).
+- **m0nk111-repos:** draaien op de repo-level runners in
+  `/home/flip/github-action-runners-m0nk111/` met per-repo secret
+  `GUARDIAN_API_KEY` (zelfde pr-piet key).
