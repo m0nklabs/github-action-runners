@@ -1,6 +1,6 @@
-## Reusable workflow — Definition of Done: laat MoniFuse de DoD uitvoeren en meld het op de PR
+## Reusable workflow — Definition of Done: MoniFuse bepaalt, de PR toont
 #
-# Door projecten aan te roepen met:
+# Door projecten aan te roepen met (dit is ALLE configuratie aan de projectkant):
 #
 #   jobs:
 #     dod:
@@ -8,17 +8,16 @@
 #         contents: read
 #         pull-requests: write      # verplicht: zonder deze write-permission kan de job niet commentariëren
 #       uses: m0nklabs/github-action-runners/.github/workflows/dod-check.yml@main
-#       with:
-#         mode: run                 # run = voer dod_command nu uit, report = gebruik de laatst opgeslagen uitslag
-#         fail-on-red: true         # rode DoD laat de check falen (default)
-#         comment: true             # plaatst/ververst één PR-commentaar met marker
-#         require-registration: false
 #       secrets: inherit
 #
-# Waarom dit bestaat: een definition of done is pas echt als er iets draait.
-# MoniFuse houdt per project één machine-verifieerbaar `dod_command` bij; deze
-# workflow vraagt de uitslag op (of laat hem nu uitvoeren) en zet hem als
-# PR-commentaar, zodat de merge-poort uit dezelfde bron komt als het portfolio.
+# Er staat bewust GEEN `with:`-blok: of de check draait, in welke modus, met
+# welke timeout en of rood de merge blokkeert, komt allemaal uit het
+# MoniFuse-registry (projectvelden `dod_command`, `ci_enabled`, `ci_mode`,
+# `ci_fail_on_red`, `dod_timeout`). Centraal instellen kan met:
+#
+#   POST {monifuse}/api/registry/project/<id>/ci   {"mode":"report","fail_on_red":false}
+#
+# en uitlezen met GET /api/portfolio/ci?repo=<owner/name> of ?project=<id>.
 #
 # Draait op de centrale self-hosted pool: [self-hosted, Linux]. Die pool staat op
 # dezelfde host als MoniFuse, dus de check praat met 127.0.0.1:7994.
@@ -34,11 +33,6 @@ name: Definition of Done (shared)
 on:
   workflow_call:
     inputs:
-      mode:
-        description: "run = voer de DoD nu uit, report = gebruik de laatst opgeslagen uitslag"
-        required: false
-        default: "report"
-        type: string
       project:
         description: "MoniFuse project-id (leeg = opzoeken via de repo-naam)"
         required: false
@@ -49,11 +43,6 @@ on:
         required: false
         default: "http://127.0.0.1:7994"
         type: string
-      fail-on-red:
-        description: "Laat de job falen als de DoD rood is"
-        required: false
-        default: true
-        type: boolean
       comment:
         description: "Plaats/ververs een PR-commentaar met het resultaat"
         required: false
@@ -64,11 +53,6 @@ on:
         required: false
         default: false
         type: boolean
-      timeout-seconds:
-        description: "HTTP-timeout bij mode=run; moet ruimer zijn dan de dod_timeout van het project"
-        required: false
-        default: 300
-        type: number
 
 permissions:
   contents: read
@@ -93,13 +77,11 @@ jobs:
             exit 1
           fi
 
-      - name: Zoek het project op en vraag (of voer) de DoD
+      - name: Vraag het beleid op en voer de DoD uit of lees hem uit
         id: check
         env:
           MONIFUSE_URL: ${{ inputs.monifuse-url }}
-          MODE: ${{ inputs.mode }}
           PROJECT_INPUT: ${{ inputs.project }}
-          RUN_TIMEOUT: ${{ inputs.timeout-seconds }}
           REQUIRE_REGISTRATION: ${{ inputs.require-registration }}
           CALLER_REPO: ${{ github.repository }}
         run: |
@@ -112,8 +94,8 @@ jobs:
             QUERY="repo=${CALLER_REPO}"
           fi
 
-          BODY="$RUNNER_TEMP/dod_record.json"
-          CODE="$(curl -sS -m 20 -o "$BODY" -w '%{http_code}' "${MONIFUSE_URL}/api/portfolio/dod?${QUERY}" || echo 000)"
+          POLICY="$RUNNER_TEMP/dod_policy.json"
+          CODE="$(curl -sS -m 20 -o "$POLICY" -w '%{http_code}' "${MONIFUSE_URL}/api/portfolio/ci?${QUERY}" || echo 000)"
           if [ "$CODE" = "404" ]; then
             echo "registered=false" >> "$GITHUB_OUTPUT"
             if [ "$REQUIRE_REGISTRATION" = "true" ]; then
@@ -124,43 +106,66 @@ jobs:
             exit 0
           fi
           if [ "$CODE" != "200" ]; then
-            echo "::error::MoniFuse antwoordde HTTP ${CODE} op ${QUERY}"
+            echo "::error::MoniFuse antwoordde HTTP ${CODE} op /api/portfolio/ci?${QUERY}"
             exit 1
           fi
 
-          PROJECT_ID="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["project_id"])' "$BODY")"
+          PROJECT_ID="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["project_id"])' "$POLICY")"
+          ENABLED="$(python3 -c 'import json,sys;print(str(json.load(open(sys.argv[1]))["enabled"]).lower())' "$POLICY")"
+          MODE="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["mode"])' "$POLICY")"
+          REASON="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["reason"])' "$POLICY")"
           {
             echo "registered=true"
             echo "project_id=${PROJECT_ID}"
+            echo "enabled=${ENABLED}"
+            echo "mode=${MODE}"
           } >> "$GITHUB_OUTPUT"
 
+          if [ "$ENABLED" != "true" ]; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::DoD-check overgeslagen voor ${PROJECT_ID}: ${REASON}"
+            exit 0
+          fi
+
+          RECORD="$RUNNER_TEMP/dod_record.json"
           if [ "$MODE" = "run" ]; then
-            RUN_CODE="$(curl -sS -m "$RUN_TIMEOUT" -o "$BODY" -w '%{http_code}' \
+            TIMEOUT="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["timeout_seconds"])' "$POLICY")"
+            RUN_CODE="$(curl -sS -m "$TIMEOUT" -o "$RECORD" -w '%{http_code}' \
               -X POST "${MONIFUSE_URL}/api/registry/project/${PROJECT_ID}/dod/run" \
               -H "x-admin-secret: ${TOKEN}" || echo 000)"
             if [ "$RUN_CODE" != "200" ]; then
               echo "::error::MoniFuse weigerde de DoD-uitvoering (HTTP ${RUN_CODE})"
-              head -c 400 "$BODY" 2>/dev/null || true
+              head -c 400 "$RECORD" 2>/dev/null || true
               exit 1
             fi
-            echo "DoD nu uitgevoerd door MoniFuse"
+            echo "DoD nu uitgevoerd door MoniFuse (modus: run)"
           else
-            echo "laatst opgeslagen DoD-uitslag gebruikt"
+            GET_CODE="$(curl -sS -m 20 -o "$RECORD" -w '%{http_code}' "${MONIFUSE_URL}/api/portfolio/dod?project=${PROJECT_ID}" || echo 000)"
+            if [ "$GET_CODE" != "200" ]; then
+              echo "::error::MoniFuse gaf HTTP ${GET_CODE} op het DoD-record"
+              exit 1
+            fi
+            echo "laatst opgeslagen DoD-uitslag gebruikt (modus: report)"
           fi
 
-          python3 - "$BODY" "$GITHUB_OUTPUT" <<'PY'
+          python3 - "$RECORD" "$POLICY" "$GITHUB_OUTPUT" <<'PY'
           import json, os, pathlib, sys
 
           record = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          policy = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+          out_path = sys.argv[3]
+
           status = record.get("dod_status", "unknown")
           project = record.get("project_id", "")
-          command = record.get("dod_command", "") or "(geen)"
+          command = record.get("dod_command") or "(geen)"
           exit_code = record.get("dod_exit_code")
           duration = record.get("dod_duration_s")
           checked = record.get("dod_checked_at", "")
           workdir = record.get("workdir", "")
           tail = (record.get("dod_output_tail") or "")[-1500:]
-          summary = record.get("portfolio", {}) or {}
+          carriage = {"run": "nu uitgevoerd", "report": "laatste bekende uitslag"}.get(
+              policy.get("mode", "run"), "onbekend")
+          summary = policy.get("portfolio", {}) or {}
           by_status = summary.get("by_status", {}) or {}
           portfolio = (f"{summary.get('projects', '?')} projecten: "
                        f"{by_status.get('active', 0)} actief / "
@@ -181,8 +186,9 @@ jobs:
               "|---|---|",
               f"| Project | `{cell(project)}` |",
               f"| Commando | `{cell(command)}` |",
-              f"| Uitslag | {icon} {word} (exit {cell(exit_code)}, {cell(duration)}s) |",
+              f"| Uitslag | {icon} {word} (exit {cell(exit_code)}, {cell(duration)}s, {cell(carriage)}) |",
               f"| Gemeten | {cell(checked)} in `{cell(workdir)}` |",
+              f"| Blokkeert bij rood | {'ja' if policy.get('fail_on_red') else 'nee'} |",
               f"| Portfolio | {cell(portfolio)} |",
           ]
           if tail.strip():
@@ -195,15 +201,16 @@ jobs:
 
           def emit(key, value):
               text = str(value if value is not None else "").replace("\n", " ")
-              with open(sys.argv[2], "a", encoding="utf-8") as handle:
+              with open(out_path, "a", encoding="utf-8") as handle:
                   handle.write(f"{key}={text}\n")
 
           emit("status", status)
           emit("project_id", project)
+          emit("fail_on_red", "true" if policy.get("fail_on_red") else "false")
           PY
 
       - name: Meld de uitslag op de pull request
-        if: ${{ inputs.comment == true && github.event.pull_request.number != null }}
+        if: ${{ inputs.comment == true && steps.check.outputs.skipped != 'true' && github.event.pull_request.number != null }}
         env:
           GH_TOKEN: ${{ github.token }}
           CALLER_REPO: ${{ github.repository }}
@@ -239,7 +246,7 @@ jobs:
         env:
           STATUS: ${{ steps.check.outputs.status }}
           REGISTERED: ${{ steps.check.outputs.registered }}
-          FAIL_ON_RED: ${{ inputs.fail-on-red }}
+          FAIL_ON_RED: ${{ steps.check.outputs.fail_on_red }}
         run: |
           set -euo pipefail
           if [ "${REGISTERED:-false}" != "true" ]; then
@@ -250,14 +257,23 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-
-          if [ -f "$RUNNER_TEMP/dod_comment.md" ]; then
-            cat "$RUNNER_TEMP/dod_comment.md" >> "$GITHUB_STEP_SUMMARY"
+          if [ ! -f "$RUNNER_TEMP/dod_comment.md" ]; then
+            {
+              echo "## Definition of Done"
+              echo ""
+              echo "Overgeslagen: geen DoD-check geconfigureerd in het registry."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
 
-          if [ "$STATUS" = "red" ] && [ "$FAIL_ON_RED" = "true" ]; then
+          cat "$RUNNER_TEMP/dod_comment.md" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$STATUS" = "red" ] && [ "${FAIL_ON_RED:-true}" = "true" ]; then
             echo "::error::Definition of Done is rood"
             exit 1
+          fi
+          if [ "$STATUS" = "red" ]; then
+            echo "::warning::DoD is rood, maar blokkeert niet (ci_fail_on_red=false in het registry)"
           fi
           if [ "$STATUS" = "unknown" ]; then
             echo "::warning::geen DoD-uitslag beschikbaar (nog niet uitgevoerd?)"
