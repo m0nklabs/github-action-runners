@@ -130,6 +130,7 @@ Beschikbare reusable workflows (in `.github/workflows/`):
 | `gpu-ci.yml` | (GPU) | GPU-tests, serieel via `gpu-run.sh` |
 | `codeql-ci.yml` | (CodeQL) | SAST security-scan per taal — **gratis op publieke repos** (`c-cpp`, `csharp`, `go`, `java-kotlin`, `javascript-typescript`, `python`, `ruby`, `swift`) |
 | `semgrep-ci.yml` | (SAST) | **Gratis security-scan op élke repo (publiek + privé)** via Semgrep Core (open-source). `config: auto` scant alle talen, resultaat als JSON-artifact. Werkt waar CodeQL niet gratis kan (privé). |
+| `dod-check.yml` | (proces) | **Definition of Done uit het MoniFuse-registry** uitvoeren (`mode: run`) of de laatste uitslag ophalen (`mode: report`), en die als PR-commentaar plaatsen; rode DoD laat de check falen. Caller moet `permissions: pull-requests: write` zetten. De admin-token komt lokaal van de runner (`~/.secrets/monifuse-admin.token`), nooit uit GitHub. |
 | `codeql-detect.yml` | (CodeQL auto) | CodeQL met **automatische taal-detectie** (via GitHub languages API, met percentages) — geen handmatige `languages`-input |
 
 ### CodeQL met automatische taal-detectie

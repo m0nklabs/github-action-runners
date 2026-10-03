@@ -1,0 +1,264 @@
+## Reusable workflow — Definition of Done: laat MoniFuse de DoD uitvoeren en meld het op de PR
+#
+# Door projecten aan te roepen met:
+#
+#   jobs:
+#     dod:
+#       permissions:
+#         contents: read
+#         pull-requests: write      # verplicht: zonder deze write-permission kan de job niet commentariëren
+#       uses: m0nklabs/github-action-runners/.github/workflows/dod-check.yml@main
+#       with:
+#         mode: run                 # run = voer dod_command nu uit, report = gebruik de laatst opgeslagen uitslag
+#         fail-on-red: true         # rode DoD laat de check falen (default)
+#         comment: true             # plaatst/ververst één PR-commentaar met marker
+#         require-registration: false
+#       secrets: inherit
+#
+# Waarom dit bestaat: een definition of done is pas echt als er iets draait.
+# MoniFuse houdt per project één machine-verifieerbaar `dod_command` bij; deze
+# workflow vraagt de uitslag op (of laat hem nu uitvoeren) en zet hem als
+# PR-commentaar, zodat de merge-poort uit dezelfde bron komt als het portfolio.
+#
+# Draait op de centrale self-hosted pool: [self-hosted, Linux]. Die pool staat op
+# dezelfde host als MoniFuse, dus de check praat met 127.0.0.1:7994.
+#
+# De admin-token komt NOOIT uit GitHub: de runner leest hem lokaal uit
+# ~/.secrets/monifuse-admin.token (conventie van deze repo, regel 4). Ontbreekt
+# dat bestand, dan faalt de job met een duidelijke melding in plaats van stil
+# door te gaan. De PR-tekst wordt volledig in Python uit het JSON-antwoord
+# opgebouwd; ruwe DoD-uitvoer komt nooit in een shell-expressie terecht.
+
+name: Definition of Done (shared)
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "run = voer de DoD nu uit, report = gebruik de laatst opgeslagen uitslag"
+        required: false
+        default: "report"
+        type: string
+      project:
+        description: "MoniFuse project-id (leeg = opzoeken via de repo-naam)"
+        required: false
+        default: ""
+        type: string
+      monifuse-url:
+        description: "Basis-URL van MoniFuse zoals bereikbaar vanaf de runner"
+        required: false
+        default: "http://127.0.0.1:7994"
+        type: string
+      fail-on-red:
+        description: "Laat de job falen als de DoD rood is"
+        required: false
+        default: true
+        type: boolean
+      comment:
+        description: "Plaats/ververs een PR-commentaar met het resultaat"
+        required: false
+        default: true
+        type: boolean
+      require-registration:
+        description: "Falen als de repo niet in het MoniFuse-registry staat"
+        required: false
+        default: false
+        type: boolean
+      timeout-seconds:
+        description: "HTTP-timeout bij mode=run; moet ruimer zijn dan de dod_timeout van het project"
+        required: false
+        default: 300
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dod:
+    runs-on: [self-hosted, Linux]
+    steps:
+      - name: Controleer de lokaal beschikbare MoniFuse-token
+        run: |
+          set -euo pipefail
+          TOKEN_FILE="$HOME/.secrets/monifuse-admin.token"
+          if [ -s "$TOKEN_FILE" ]; then
+            echo "token gevonden in $TOKEN_FILE"
+          elif [ -n "${MONIFUSE_ADMIN_SECRET:-}" ]; then
+            printf '%s' "$MONIFUSE_ADMIN_SECRET" > "$TOKEN_FILE"
+            chmod 600 "$TOKEN_FILE"
+            echo "token uit de omgeving overgenomen naar $TOKEN_FILE"
+          else
+            echo "::error::geen MoniFuse admin-token: verwacht $TOKEN_FILE op de runner"
+            exit 1
+          fi
+
+      - name: Zoek het project op en vraag (of voer) de DoD
+        id: check
+        env:
+          MONIFUSE_URL: ${{ inputs.monifuse-url }}
+          MODE: ${{ inputs.mode }}
+          PROJECT_INPUT: ${{ inputs.project }}
+          RUN_TIMEOUT: ${{ inputs.timeout-seconds }}
+          REQUIRE_REGISTRATION: ${{ inputs.require-registration }}
+          CALLER_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TOKEN="$(cat "$HOME/.secrets/monifuse-admin.token")"
+
+          if [ -n "$PROJECT_INPUT" ]; then
+            QUERY="project=${PROJECT_INPUT}"
+          else
+            QUERY="repo=${CALLER_REPO}"
+          fi
+
+          BODY="$RUNNER_TEMP/dod_record.json"
+          CODE="$(curl -sS -m 20 -o "$BODY" -w '%{http_code}' "${MONIFUSE_URL}/api/portfolio/dod?${QUERY}" || echo 000)"
+          if [ "$CODE" = "404" ]; then
+            echo "registered=false" >> "$GITHUB_OUTPUT"
+            if [ "$REQUIRE_REGISTRATION" = "true" ]; then
+              echo "::error::${CALLER_REPO} staat niet in het MoniFuse-registry (require-registration=true)"
+              exit 1
+            fi
+            echo "::notice::${CALLER_REPO} staat niet in het MoniFuse-registry; DoD-check overgeslagen"
+            exit 0
+          fi
+          if [ "$CODE" != "200" ]; then
+            echo "::error::MoniFuse antwoordde HTTP ${CODE} op ${QUERY}"
+            exit 1
+          fi
+
+          PROJECT_ID="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["project_id"])' "$BODY")"
+          {
+            echo "registered=true"
+            echo "project_id=${PROJECT_ID}"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$MODE" = "run" ]; then
+            RUN_CODE="$(curl -sS -m "$RUN_TIMEOUT" -o "$BODY" -w '%{http_code}' \
+              -X POST "${MONIFUSE_URL}/api/registry/project/${PROJECT_ID}/dod/run" \
+              -H "x-admin-secret: ${TOKEN}" || echo 000)"
+            if [ "$RUN_CODE" != "200" ]; then
+              echo "::error::MoniFuse weigerde de DoD-uitvoering (HTTP ${RUN_CODE})"
+              head -c 400 "$BODY" 2>/dev/null || true
+              exit 1
+            fi
+            echo "DoD nu uitgevoerd door MoniFuse"
+          else
+            echo "laatst opgeslagen DoD-uitslag gebruikt"
+          fi
+
+          python3 - "$BODY" "$GITHUB_OUTPUT" <<'PY'
+          import json, os, pathlib, sys
+
+          record = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          status = record.get("dod_status", "unknown")
+          project = record.get("project_id", "")
+          command = record.get("dod_command", "") or "(geen)"
+          exit_code = record.get("dod_exit_code")
+          duration = record.get("dod_duration_s")
+          checked = record.get("dod_checked_at", "")
+          workdir = record.get("workdir", "")
+          tail = (record.get("dod_output_tail") or "")[-1500:]
+          summary = record.get("portfolio", {}) or {}
+          by_status = summary.get("by_status", {}) or {}
+          portfolio = (f"{summary.get('projects', '?')} projecten: "
+                       f"{by_status.get('active', 0)} actief / "
+                       f"{by_status.get('autonomous', 0)} autonoom / "
+                       f"{by_status.get('frozen', 0)} bevroren")
+
+          icon, word = {"green": ("✅", "groen"), "red": ("❌", "rood")}.get(status, ("⚠️", "onbekend"))
+
+          def cell(value):
+              # A DoD command usually contains a pipe, which would break the Markdown table.
+              return str(value if value is not None else "").replace("|", "\\|")
+
+          lines = [
+              "<!-- monifuse-dod -->",
+              f"### {icon} Definition of Done — {word}",
+              "",
+              "| | |",
+              "|---|---|",
+              f"| Project | `{cell(project)}` |",
+              f"| Commando | `{cell(command)}` |",
+              f"| Uitslag | {icon} {word} (exit {cell(exit_code)}, {cell(duration)}s) |",
+              f"| Gemeten | {cell(checked)} in `{cell(workdir)}` |",
+              f"| Portfolio | {cell(portfolio)} |",
+          ]
+          if tail.strip():
+              lines += ["", "<details><summary>Uitvoer (laatste regels)</summary>", "", "```",
+                        tail.replace("```", "'''"), "```", "</details>"]
+          lines += ["", "_Bron: MoniFuse-registry. Een DoD is alleen echt als iets hem uitvoert._"]
+
+          pathlib.Path(os.environ["RUNNER_TEMP"], "dod_comment.md").write_text(
+              "\n".join(lines) + "\n", encoding="utf-8")
+
+          def emit(key, value):
+              text = str(value if value is not None else "").replace("\n", " ")
+              with open(sys.argv[2], "a", encoding="utf-8") as handle:
+                  handle.write(f"{key}={text}\n")
+
+          emit("status", status)
+          emit("project_id", project)
+          PY
+
+      - name: Meld de uitslag op de pull request
+        if: ${{ inputs.comment == true && github.event.pull_request.number != null }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CALLER_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh api "/repos/${CALLER_REPO}/issues/${PR_NUMBER}/comments?per_page=100" \
+            > "$RUNNER_TEMP/comments.json" 2>/dev/null || echo '[]' > "$RUNNER_TEMP/comments.json"
+
+          COMMENT_ID="$(python3 - "$RUNNER_TEMP/comments.json" <<'PY'
+          import json, sys
+          try:
+              items = json.load(open(sys.argv[1], encoding="utf-8"))
+          except Exception:
+              items = []
+          marker = "<!-- monifuse-dod -->"
+          print(next((str(c.get("id")) for c in items if marker in (c.get("body") or "")), ""))
+          PY
+          )"
+
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X PATCH "/repos/${CALLER_REPO}/issues/comments/${COMMENT_ID}" \
+              -F body=@"$RUNNER_TEMP/dod_comment.md" > /dev/null
+            echo "bestaand commentaar bijgewerkt (id ${COMMENT_ID})"
+          else
+            gh api -X POST "/repos/${CALLER_REPO}/issues/${PR_NUMBER}/comments" \
+              -F body=@"$RUNNER_TEMP/dod_comment.md" > /dev/null
+            echo "nieuw commentaar geplaatst"
+          fi
+
+      - name: Samenvatting en verdict
+        if: always()
+        env:
+          STATUS: ${{ steps.check.outputs.status }}
+          REGISTERED: ${{ steps.check.outputs.registered }}
+          FAIL_ON_RED: ${{ inputs.fail-on-red }}
+        run: |
+          set -euo pipefail
+          if [ "${REGISTERED:-false}" != "true" ]; then
+            {
+              echo "## Definition of Done"
+              echo ""
+              echo "Geen MoniFuse-registratie voor deze repo; niets te controleren."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ -f "$RUNNER_TEMP/dod_comment.md" ]; then
+            cat "$RUNNER_TEMP/dod_comment.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$STATUS" = "red" ] && [ "$FAIL_ON_RED" = "true" ]; then
+            echo "::error::Definition of Done is rood"
+            exit 1
+          fi
+          if [ "$STATUS" = "unknown" ]; then
+            echo "::warning::geen DoD-uitslag beschikbaar (nog niet uitgevoerd?)"
+          fi
