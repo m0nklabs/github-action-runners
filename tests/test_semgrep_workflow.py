@@ -144,7 +144,7 @@ class GateTests(unittest.TestCase):
                        {'ruleId': 'test', 'suppressions': {}},
                        {'ruleId': 'test', 'suppressions': [{'kind': 'bogus'}]}):
             report = copy.deepcopy(original_sarif)
-            report['runs'][0]['results'] = [result]
+            report['runs'][0]['results'] = [{'message': {'text': 'Synthetic'}, **result}]
             bad_sarif.append(report)
         for report in bad_sarif:
             with self.subTest(sarif=report):
