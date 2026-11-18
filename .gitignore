@@ -21,3 +21,7 @@ _work/
 **/runsvc.sh
 **/svc.sh
 *.log
+
+# Python regression-test caches
+__pycache__/
+*.py[cod]

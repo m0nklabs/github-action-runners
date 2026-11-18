@@ -1,27 +1,18 @@
-## Voorbeeld: Semgrep SAST — gratis op élke repo (publiek én privé).
-#
-# Semgrep Core is open-source (LGPL) en werkt ook op privé-repos, in
-# tegenstelling tot CodeQL. Dit is de standaard security-scan voor projecten;
-# op publieke repos kun je daarnaast CodeQL gebruiken.
-#
-#   jobs:
-#     semgrep:
-#       uses: m0nklabs/github-action-runners/.github/workflows/semgrep-ci.yml@main
-#       with:
-#         config: auto            # alle talen; of p/security-audit, p/python, ...
-#         fail-on: none           # findings falen de job niet; je krijgt wel een artifact
-#       secrets: inherit
-
+# Private/public SAST without GitHub Code Scanning entitlement or inherited secrets.
+# Pin the reusable workflow to a reviewed commit SHA for a controlled rollout.
 name: Semgrep SAST
 
 on:
   push:
     branches: [main, master]
   pull_request:
+  schedule:
+    # Choose a repository-specific weekly UTC slot to spread runner load.
+    - cron: '23 4 * * 3'
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: semgrep-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -29,8 +20,18 @@ permissions:
 
 jobs:
   semgrep:
+    # Fork PRs need an explicitly isolated runner policy, not a persistent org host.
+    # This skip is NOT a completed scan. Never use pull_request_target for checkout.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     uses: m0nklabs/github-action-runners/.github/workflows/semgrep-ci.yml@main
     with:
-      config: auto
-      fail-on: none
-    secrets: inherit
+      config: p/default
+      src-dir: '.'
+      fail-on: error
+      runs-on: '["self-hosted", "Linux", "X64"]'
+      timeout-minutes: 20
+      scan-jobs: 2
+    # No secrets: inherit. The scan only needs the caller's contents: read token.
+    # Personal repositories must select runners they already have access to.
+    # Hosted labels require a separate private-minutes/billing decision; this
+    # reusable workflow does not lend org runners or register personal runners.
