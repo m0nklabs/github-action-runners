@@ -248,6 +248,7 @@ runner-owned report directory per run attempt. No GPU is used.
 | `fail-on` | `none` | `error` blocks unsuppressed ERROR findings; `warning` blocks WARNING + ERROR; `none` disables **only the finding threshold**. Invalid values and all scanner/config/runtime/report/coverage failures are always red. |
 | `runs-on` | `["self-hosted", "Linux", "X64"]` | JSON runner labels evaluated with `fromJSON`. Select only runners accessible to the caller. No runner registration is performed. |
 | `timeout-minutes` | `20` | Job timeout; includes image retrieval and scanning. |
+| `engine-timeout-seconds` | `30` | Maximum seconds per rule per file (`--timeout`), integer 1–120. Zero/unlimited, fractions and invalid values are rejected before Docker runs. |
 | `scan-jobs` | `2` | CPU scanner workers, integer 1–16. |
 
 **Initial rollout policy (operator decision, 2026-11-18):** report findings
@@ -272,6 +273,16 @@ in-source `nosemgrep` suppressions (counted visibly). There is no second scan,
 `--error` gate, mutable pip upgrade, or failure-masking step. Strict scanner
 diagnostics, missing/malformed reports, unsuccessful invocations, empty rule
 sets and zero scanned targets all fail closed, even with `fail-on: none`.
+
+The engine budget is separate from the job timeout: Semgrep 1.184.0 defaults
+upstream to 5 seconds per rule per file; this workflow explicitly allows 30
+seconds for complex first-party files. A caller can set, for example,
+`engine-timeout-seconds: 60` after investigating a timeout. The unchanged
+upstream timeout threshold skips a file after 3 timed-out rules. Any remaining
+`Timeout` diagnostic still fails both the strict scan and report gate, including
+in report-first mode; raising the budget is not a coverage guarantee or an
+excuse to suppress diagnostics/exclude source. The job timeout remains the
+outer limit for the whole scan.
 
 Coverage is **not** a promise to analyze every language or file. The same-run
 JSON must contain scanned targets; zero targets (for example, an unsupported

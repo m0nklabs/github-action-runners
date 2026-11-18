@@ -178,6 +178,22 @@ class GateTests(unittest.TestCase):
                 }]
                 self.assertEqual(self.gate('none').returncode, 2)
 
+    def test_timeout_diagnostic_fails_even_none(self):
+        timeout = {'code': 2, 'level': 'warn', 'type': 'Timeout',
+                   'rule_id': 'test', 'path': 'test.py', 'message': 'Synthetic timeout'}
+        self.coverage['errors'] = [timeout]
+        result = self.gate('none')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('Scanner reported errors', result.stdout)
+        self.coverage['errors'] = []
+        self.sarif['runs'][0]['invocations'][0]['toolExecutionNotifications'] = [
+            {'level': 'warning', 'descriptor': {'id': 'Timeout'},
+             'message': {'text': 'Synthetic timeout'}}
+        ]
+        result = self.gate('none')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('Scanner reported a warning/error diagnostic', result.stdout)
+
     def test_required_report_structure(self):
         original = copy.deepcopy(self.sarif)
         for field in ('name', 'semanticVersion'):
@@ -207,6 +223,7 @@ class ScanFixture(unittest.TestCase):
         self.environment = {
             'SEMGREP_FAIL_ON': 'error', 'SEMGREP_CONFIG': 'p/default',
             'SEMGREP_JOBS': '2', 'SEMGREP_IMAGE': IMAGE,
+            'SEMGREP_ENGINE_TIMEOUT_SECONDS': '30',
             'GITHUB_WORKSPACE': str(self.workspace), 'SEMGREP_SRC_DIR': '.',
             'RUNNER_TEMP': str(self.directory), 'REPORT_NAME': 'report',
         }
@@ -227,6 +244,7 @@ class ScanTests(ScanFixture):
         self.assertIn('--sarif', command)
         self.assertIn('--json-output=/out/semgrep.json', command)
         self.assertIn('--strict', command)
+        self.assertEqual([arg for arg in command if arg.startswith('--timeout=')], ['--timeout=30'])
         self.assertNotIn('--error', command)
         self.assertNotIn('--fail-on', command)
         self.assertTrue(run.call_args.kwargs['check'])
@@ -234,9 +252,10 @@ class ScanTests(ScanFixture):
     def test_nondefault_inputs_and_literal_metacharacters(self):
         (self.workspace / 'app').mkdir()
         run = self.scan(SEMGREP_SRC_DIR='app', SEMGREP_JOBS='3', SEMGREP_FAIL_ON='warning',
+                        SEMGREP_ENGINE_TIMEOUT_SECONDS='60',
                         SEMGREP_CONFIG='p/python "rules with spaces.yml" "$(touch sentinel)"')
         command = run.call_args.args[0]
-        for value in ('/src/app', '--jobs=3', '--config=p/python',
+        for value in ('/src/app', '--jobs=3', '--timeout=60', '--config=p/python',
                       '--config=rules with spaces.yml', '--config=$(touch sentinel)'):
             self.assertIn(value, command)
         self.assertFalse((self.workspace / 'sentinel').exists())
@@ -249,6 +268,34 @@ class ScanTests(ScanFixture):
                         {'SEMGREP_SRC_DIR': '/tmp'}):
             with self.subTest(changes=changes), self.assertRaises((SystemExit, ValueError)):
                 self.scan(**changes)
+
+    def test_engine_timeout_input_contract(self):
+        block = TEXT.split('      engine-timeout-seconds:\n', 1)[1].split('      scan-jobs:\n', 1)[0]
+        self.assertIn('        default: 30\n', block)
+        self.assertIn('        type: number\n', block)
+        self.assertIn('SEMGREP_ENGINE_TIMEOUT_SECONDS: ${{ inputs.engine-timeout-seconds }}', TEXT)
+
+    def test_engine_timeout_bounds(self):
+        for seconds in ('1', '120'):
+            with self.subTest(seconds=seconds):
+                run = self.scan(SEMGREP_ENGINE_TIMEOUT_SECONDS=seconds)
+                command = run.call_args.args[0]
+                self.assertEqual([arg for arg in command if arg.startswith('--timeout=')],
+                                 [f'--timeout={seconds}'])
+                # Each attempt must use a fresh output directory.
+                (self.directory / 'report').rmdir()
+
+    def test_invalid_engine_timeout_never_invokes_docker(self):
+        for seconds in ('0', '-1', '121', '1.5', '', ' 30', '30 ', '1e2', 'NaN',
+                        '٣٠', '30 --no-strict', '$(touch sentinel)', '30\n--timeout=0'):
+            with self.subTest(seconds=seconds), \
+                    patch.dict(os.environ, {**self.environment, 'SEMGREP_ENGINE_TIMEOUT_SECONDS': seconds}), \
+                    patch('subprocess.run') as run:
+                with self.assertRaisesRegex(SystemExit, 'engine-timeout-seconds'):
+                    exec(compile(SCAN, str(WORKFLOW), 'exec'), {})
+                run.assert_not_called()
+                self.assertFalse((self.directory / 'report').exists())
+        self.assertFalse((self.workspace / 'sentinel').exists())
 
     def test_symlink_escape_rejected(self):
         (self.workspace / 'escape').symlink_to(self.directory, target_is_directory=True)
@@ -309,6 +356,12 @@ class ContainerTests(ScanFixture):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.actual_gate().returncode, 0)
         self.assertEqual(((Path(self.environment['RUNNER_TEMP']) / self.environment['REPORT_NAME']) / 'semgrep.sarif').stat().st_uid, os.getuid())
+
+    def test_actual_nondefault_engine_timeout(self):
+        self.environment['SEMGREP_ENGINE_TIMEOUT_SECONDS'] = '7'
+        result = self.actual_scan('safe = 1\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.actual_gate('none').returncode, 0)
 
     def test_actual_error_and_suppression(self):
         result = self.actual_scan('danger(1)\ncaution(2)\ndanger(3)  # nosemgrep: test-error\n')

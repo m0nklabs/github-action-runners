@@ -30,6 +30,11 @@ on:
         required: false
         default: 20
         type: number
+      engine-timeout-seconds:
+        description: Maximum seconds per rule per file (integer 1–120); scanner timeouts still fail
+        required: false
+        default: 30
+        type: number
       scan-jobs:
         description: Number of parallel scanner workers (CPU only)
         required: false
@@ -52,6 +57,7 @@ jobs:
       SEMGREP_SRC_DIR: ${{ inputs.src-dir }}
       SEMGREP_FAIL_ON: ${{ inputs.fail-on }}
       SEMGREP_JOBS: ${{ inputs.scan-jobs }}
+      SEMGREP_ENGINE_TIMEOUT_SECONDS: ${{ inputs.engine-timeout-seconds }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -76,6 +82,10 @@ jobs:
           jobs = os.environ['SEMGREP_JOBS']
           if not jobs.isdecimal() or not 1 <= int(jobs) <= 16:
               raise SystemExit('scan-jobs must be an integer between 1 and 16')
+          engine_timeout = os.environ['SEMGREP_ENGINE_TIMEOUT_SECONDS']
+          if not (engine_timeout.isascii() and engine_timeout.isdecimal()
+                  and 1 <= int(engine_timeout) <= 120):
+              raise SystemExit('engine-timeout-seconds must be an integer between 1 and 120')
           workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve(strict=True)
           requested = Path(os.environ['SEMGREP_SRC_DIR'])
           source = (workspace / requested).resolve(strict=True)
@@ -92,7 +102,7 @@ jobs:
               '-v', f'{workspace}:/src:ro', '-v', f'{report_dir}:/out',
               '-w', f'/src/{relative}', os.environ['SEMGREP_IMAGE'],
               'semgrep', 'scan', '--oss-only', '--strict', '--metrics=off',
-              '--disable-version-check', f'--jobs={jobs}',
+              '--disable-version-check', f'--jobs={jobs}', f'--timeout={engine_timeout}',
               '--sarif', '--output=/out/semgrep.sarif',
               '--json-output=/out/semgrep.json',
           ]

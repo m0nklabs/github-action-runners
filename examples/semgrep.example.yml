@@ -31,6 +31,8 @@ jobs:
       fail-on: none
       runs-on: '["self-hosted", "Linux", "X64"]'
       timeout-minutes: 20
+      # Per rule/file, integer 1–120; distinct from the whole-job timeout.
+      engine-timeout-seconds: 30
       scan-jobs: 2
     # No secrets: inherit. The scan only needs the caller's contents: read token.
     # Personal repositories must select runners they already have access to.
