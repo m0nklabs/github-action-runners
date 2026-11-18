@@ -129,7 +129,7 @@ Beschikbare reusable workflows (in `.github/workflows/`):
 | `swift-ci.yml` | Swift | swift build + test |
 | `gpu-ci.yml` | (GPU) | GPU-tests, serieel via `gpu-run.sh` |
 | `codeql-ci.yml` | (CodeQL) | SAST security-scan per taal — **gratis op publieke repos** (`c-cpp`, `csharp`, `go`, `java-kotlin`, `javascript-typescript`, `python`, `ruby`, `swift`) |
-| `semgrep-ci.yml` | (SAST) | **Private/public SAST** via one digest-pinned Semgrep OSS scan. Defaults: `config: p/default`, ERROR gate; SARIF + coverage JSON as ordinary Actions artifacts, not Code Scanning. See [Semgrep contract](#semgrep-contract-and-rollout). |
+| `semgrep-ci.yml` | (SAST) | **Private/public SAST** via one digest-pinned Semgrep OSS scan. Defaults: `config: p/default`, report-only findings; SARIF + coverage JSON as ordinary Actions artifacts, not Code Scanning. See [Semgrep contract](#semgrep-contract-and-rollout). |
 | `dod-check.yml` | (proces) | **Definition of Done uit het MoniFuse-registry** uitvoeren (`mode: run`) of de laatste uitslag ophalen (`mode: report`), en die als PR-commentaar plaatsen; rode DoD laat de check falen. Caller moet `permissions: pull-requests: write` zetten. De admin-token komt lokaal van de runner (`~/.secrets/monifuse-admin.token`), nooit uit GitHub. |
 | `codeql-detect.yml` | (CodeQL auto) | CodeQL met **automatische taal-detectie** (via GitHub languages API, met percentages) — geen handmatige `languages`-input |
 
@@ -245,18 +245,23 @@ runner-owned report directory per run attempt. No GPU is used.
 | --- | --- | --- |
 | `config` | `p/default` | One or more space-separated Semgrep configs; quote paths with spaces. Each becomes a literal `--config` argument, without shell evaluation. Local paths resolve from `src-dir`. `auto`, registry IDs, URLs and local rule files remain supported by the scanner. |
 | `src-dir` | `.` | Existing directory inside the checkout. Absolute paths and symlink/path escapes are rejected. The scan and both reports use this same scope. |
-| `fail-on` | `error` | `error` blocks unsuppressed ERROR findings; `warning` blocks WARNING + ERROR; `none` disables **only the finding threshold**. Invalid values and all scanner/config/runtime/report/coverage failures are always red. |
+| `fail-on` | `none` | `error` blocks unsuppressed ERROR findings; `warning` blocks WARNING + ERROR; `none` disables **only the finding threshold**. Invalid values and all scanner/config/runtime/report/coverage failures are always red. |
 | `runs-on` | `["self-hosted", "Linux", "X64"]` | JSON runner labels evaluated with `fromJSON`. Select only runners accessible to the caller. No runner registration is performed. |
 | `timeout-minutes` | `20` | Job timeout; includes image retrieval and scanning. |
 | `scan-jobs` | `2` | CPU scanner workers, integer 1–16. |
 
-**Behavior changes:** the default finding threshold is now ERROR rather than
-report-only, and the default ruleset is explicitly `p/default` rather than
-`auto`. The unused `output-format` input has been removed: output is always
-SARIF plus JSON. Remove that input from any older caller rather than expecting
-it to change output. `config`, `src-dir` and `fail-on` remain supported. Existing
-explicit `fail-on: none` callers keep report-only findings, but cannot mask
-scanner failures. Rollout callers should use `fail-on: error` and omit
+**Initial rollout policy (operator decision, 2026-11-18):** report findings
+first, then remediate product issues separately. The default remains
+`fail-on: none`: findings are visible in the reports and summary, but do not
+block scanner installation. Operational failures are always red. Repositories
+can explicitly select `error` or `warning` after their findings are triaged.
+
+**Behavior changes:** the default ruleset is explicitly `p/default` rather
+than `auto`. The unused `output-format` input has been removed: output is
+always SARIF plus JSON. Remove that input from any older caller rather than
+expecting it to change output. `config`, `src-dir` and `fail-on` remain
+supported. Existing `fail-on: none` callers cannot mask scanner failures.
+Initial rollout callers should explicitly use `fail-on: none` and omit
 `secrets: inherit`.
 
 The single scan uses Semgrep OSS **1.184.0**, pinned to the same Docker digest as

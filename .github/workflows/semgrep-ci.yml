@@ -18,7 +18,7 @@ on:
       fail-on:
         description: 'Finding threshold: error, warning (includes error), or none; scanner failures always fail'
         required: false
-        default: error
+        default: none
         type: string
       runs-on:
         description: 'JSON runner labels available to the caller; never provisions runners'

@@ -71,6 +71,10 @@ class GateTests(unittest.TestCase):
         self.finding()
         self.assertEqual(self.gate().returncode, 1)
 
+    def test_report_first_default_contract(self):
+        block = TEXT.split('      fail-on:\n', 1)[1].split('      runs-on:\n', 1)[0]
+        self.assertIn('        default: none\n', block)
+
     def test_none_allows_findings(self):
         self.finding()
         self.assertEqual(self.gate('none').returncode, 0)

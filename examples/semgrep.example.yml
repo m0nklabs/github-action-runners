@@ -27,7 +27,8 @@ jobs:
     with:
       config: p/default
       src-dir: '.'
-      fail-on: error
+      # Initial rollout reports findings; scanner failures still fail the job.
+      fail-on: none
       runs-on: '["self-hosted", "Linux", "X64"]'
       timeout-minutes: 20
       scan-jobs: 2
