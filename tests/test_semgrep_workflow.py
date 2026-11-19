@@ -223,7 +223,7 @@ class ScanFixture(unittest.TestCase):
         self.environment = {
             'SEMGREP_FAIL_ON': 'error', 'SEMGREP_CONFIG': 'p/default',
             'SEMGREP_JOBS': '2', 'SEMGREP_IMAGE': IMAGE,
-            'SEMGREP_ENGINE_TIMEOUT_SECONDS': '30',
+            'SEMGREP_ENGINE_TIMEOUT_SECONDS': '30', 'SEMGREP_EXCLUDE_RULES': '',
             'GITHUB_WORKSPACE': str(self.workspace), 'SEMGREP_SRC_DIR': '.',
             'RUNNER_TEMP': str(self.directory), 'REPORT_NAME': 'report',
         }
@@ -297,6 +297,74 @@ class ScanTests(ScanFixture):
                 self.assertFalse((self.directory / 'report').exists())
         self.assertFalse((self.workspace / 'sentinel').exists())
 
+    def test_exclude_rules_input_contract(self):
+        block = TEXT.split('      exclude-rules:\n', 1)[1].split('\npermissions:', 1)[0]
+        self.assertIn('        required: false\n', block)
+        self.assertIn("        default: ''\n", block)
+        self.assertIn('        type: string\n', block)
+        self.assertIn('SEMGREP_EXCLUDE_RULES: ${{ inputs.exclude-rules }}', TEXT)
+
+    def test_exclude_rules_exact_argv_when_set(self):
+        run = self.scan(SEMGREP_EXCLUDE_RULES='yaml.github-actions.security.curl-eval.curl-eval,'
+                                                'generic.secrets.security.expected-extension')
+        command = run.call_args.args[0]
+        tail = command[command.index('--exclude-rule'):]
+        self.assertEqual(tail, ['--exclude-rule', 'yaml.github-actions.security.curl-eval.curl-eval',
+                                '--exclude-rule', 'generic.secrets.security.expected-extension', '.'])
+
+    def test_exclude_rules_exact_argv_when_empty_is_baseline(self):
+        run = self.scan()
+        # Byte-equal to the pre-feature argv: no --exclude-rule arguments at all.
+        self.assertEqual(run.call_args.args[0], [
+            'docker', 'run', '--rm', '--cap-drop=ALL', '--security-opt=no-new-privileges',
+            '--user', f'{os.getuid()}:{os.getgid()}', '-e', 'HOME=/tmp',
+            '-v', f'{self.workspace}:/src:ro',
+            '-v', f"{Path(self.environment['RUNNER_TEMP']) / self.environment['REPORT_NAME']}:/out",
+            '-w', '/src/.', IMAGE,
+            'semgrep', 'scan', '--oss-only', '--strict', '--metrics=off',
+            '--disable-version-check', '--jobs=2', '--timeout=30',
+            '--sarif', '--output=/out/semgrep.sarif', '--json-output=/out/semgrep.json',
+            '--config=p/default', '.',
+        ])
+
+    def test_exclude_rules_accepts_separators_and_trimming(self):
+        for value, expected in (('a.b', ['a.b']), (' a.b \n c ', ['a.b', 'c']),
+                                ('a.b\nc,d', ['a.b', 'c', 'd']), ('x\n', ['x'])):
+            with self.subTest(value=value):
+                run = self.scan(SEMGREP_EXCLUDE_RULES=value)
+                command = run.call_args.args[0]
+                tail = command[command.index('--exclude-rule'):]
+                self.assertEqual(tail, [item for rule in expected
+                                        for item in ('--exclude-rule', rule)] + ['.'])
+                (Path(self.environment['RUNNER_TEMP']) / self.environment['REPORT_NAME']).rmdir()
+
+    def test_exclude_rules_whitespace_only_is_empty(self):
+        for value in ('', '   ', '\n', '\r\n', ' \n '):
+            with self.subTest(value=repr(value)):
+                run = self.scan(SEMGREP_EXCLUDE_RULES=value)
+                self.assertNotIn('--exclude-rule', run.call_args.args[0])
+                (Path(self.environment['RUNNER_TEMP']) / self.environment['REPORT_NAME']).rmdir()
+
+    def test_invalid_exclude_rules_never_invoke_docker(self):
+        for value in ('a b', 'a;b', 'a|b', 'a&b', 'a>b', 'a<b', 'a=b', '$(touch sentinel)',
+                      '`touch sentinel2`', '${{ github.event.head_commit.message }}',
+                      '$PATH', '"quoted"', "'single'", '\\', '*', '?', '!', '#', '@', ':',
+                      '%s', '٣٠', '../escape', '/absolute', 'a,', ',a', 'a,,b', ',',
+                      'a\n\nb', 'first\nsecond third', 'a\n$(touch sentinel3)'):
+            with self.subTest(value=value), \
+                    patch.dict(os.environ, {**self.environment, 'SEMGREP_EXCLUDE_RULES': value}), \
+                    patch('subprocess.run') as run:
+                report = self.directory / 'report'
+                if report.exists():
+                    report.rmdir()
+                with self.assertRaisesRegex(SystemExit, 'exclude-rules'):
+                    exec(compile(SCAN, str(WORKFLOW), 'exec'), {})
+                run.assert_not_called()
+                self.assertFalse(report.exists())
+        self.assertFalse((self.workspace / 'sentinel').exists())
+        self.assertFalse((self.workspace / 'sentinel2').exists())
+        self.assertFalse((self.workspace / 'sentinel3').exists())
+
     def test_symlink_escape_rejected(self):
         (self.workspace / 'escape').symlink_to(self.directory, target_is_directory=True)
         with self.assertRaises(SystemExit):
@@ -362,6 +430,35 @@ class ContainerTests(ScanFixture):
         result = self.actual_scan('safe = 1\n')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.actual_gate('none').returncode, 0)
+
+    def test_actual_exclude_rule_removes_rule_not_suppression(self):
+        self.environment['SEMGREP_EXCLUDE_RULES'] = 'test-error'
+        result = self.actual_scan('danger(1)\ncaution(2)\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        sarif = json.loads((Path(self.environment['RUNNER_TEMP'])
+                            / self.environment['REPORT_NAME'] / 'semgrep.sarif').read_text())
+        self.assertEqual([rule['id'] for rule in sarif['runs'][0]['tool']['driver']['rules']],
+                         ['test-warning'])
+        self.assertEqual(self.actual_gate().returncode, 0)
+        self.assertEqual(self.actual_gate('warning').returncode, 1)
+
+    def test_actual_unknown_exclude_rule_is_ignored(self):
+        self.environment['SEMGREP_EXCLUDE_RULES'] = 'no-such-rule'
+        result = self.actual_scan('danger(1)\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        gate = self.actual_gate()
+        self.assertEqual(gate.returncode, 1, gate.stdout)
+
+    def test_actual_invalid_exclude_rule_fails_before_docker(self):
+        self.environment['SEMGREP_EXCLUDE_RULES'] = 'bad rule id'
+        result = subprocess.run(
+            ['python3', '-I', '-c', SCAN],
+            env={**os.environ, **self.environment, 'SEMGREP_CONFIG': 'rules.yml'},
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('exclude-rules', result.stderr)
+        self.assertFalse((Path(self.environment['RUNNER_TEMP']) / self.environment['REPORT_NAME']).exists())
 
     def test_actual_error_and_suppression(self):
         result = self.actual_scan('danger(1)\ncaution(2)\ndanger(3)  # nosemgrep: test-error\n')

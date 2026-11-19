@@ -40,6 +40,11 @@ on:
         required: false
         default: 2
         type: number
+      exclude-rules:
+        description: 'Registry rule ids to exclude (newline/comma-separated); rule-scoped diagnostic exclusion only, scanner/config/report failures still fail'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -58,6 +63,7 @@ jobs:
       SEMGREP_FAIL_ON: ${{ inputs.fail-on }}
       SEMGREP_JOBS: ${{ inputs.scan-jobs }}
       SEMGREP_ENGINE_TIMEOUT_SECONDS: ${{ inputs.engine-timeout-seconds }}
+      SEMGREP_EXCLUDE_RULES: ${{ inputs.exclude-rules }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -70,6 +76,7 @@ jobs:
           python3 -I - <<'PY'
           # BEGIN SCAN HELPER
           import os
+          import re
           import shlex
           import subprocess
           from pathlib import Path
@@ -86,6 +93,18 @@ jobs:
           if not (engine_timeout.isascii() and engine_timeout.isdecimal()
                   and 1 <= int(engine_timeout) <= 120):
               raise SystemExit('engine-timeout-seconds must be an integer between 1 and 120')
+          exclude_raw = os.environ['SEMGREP_EXCLUDE_RULES'].strip()
+          exclude_rules = []
+          # Single separators only: consecutive, leading, or trailing separators
+          # produce empty entries, and empty entries are rejected, not skipped.
+          for item in (re.split(r'[,\n\r]', exclude_raw) if exclude_raw else []):
+              item = item.strip()
+              if not re.fullmatch(r'[a-zA-Z0-9._-]+', item):
+                  raise SystemExit('exclude-rules entries must be rule ids matching '
+                                   '[a-zA-Z0-9._-]+ (newline/comma-separated, no empty '
+                                   'entries); spaces, slashes, and shell metacharacters '
+                                   'are rejected')
+              exclude_rules.append(item)
           workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve(strict=True)
           requested = Path(os.environ['SEMGREP_SRC_DIR'])
           source = (workspace / requested).resolve(strict=True)
@@ -107,6 +126,8 @@ jobs:
               '--json-output=/out/semgrep.json',
           ]
           command.extend(f'--config={config}' for config in configs)
+          for item in exclude_rules:
+              command.extend(('--exclude-rule', item))
           command.append('.')
           # Findings do not affect this exit status; scanner/config/runtime errors do.
           # No --error, second scan, pip installation, or target-repo execution.
