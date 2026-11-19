@@ -34,6 +34,14 @@ jobs:
       # Per rule/file, integer 1–120; distinct from the whole-job timeout.
       engine-timeout-seconds: 30
       scan-jobs: 2
+      # Registry rule ids to exclude, newline/comma-separated. Use ONLY for
+      # rules known to be broken (e.g. re-parsing run: blocks as Bash and
+      # false-positive on every ${{ }} expression). Each id must match
+      # [a-zA-Z0-9._-]+; invalid input fails before the scanner runs. This is
+      # rule-scoped diagnostic exclusion, NOT findings suppression: scanner,
+      # config, report and gate failures remain red. Example (kept commented):
+      # exclude-rules: |
+      #   yaml.github-actions.security.curl-eval.curl-eval
     # No secrets: inherit. The scan only needs the caller's contents: read token.
     # Personal repositories must select runners they already have access to.
     # Hosted labels require a separate private-minutes/billing decision; this

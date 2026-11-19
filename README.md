@@ -250,6 +250,7 @@ runner-owned report directory per run attempt. No GPU is used.
 | `timeout-minutes` | `20` | Job timeout; includes image retrieval and scanning. |
 | `engine-timeout-seconds` | `30` | Maximum seconds per rule per file (`--timeout`), integer 1–120. Zero/unlimited, fractions and invalid values are rejected before Docker runs. |
 | `scan-jobs` | `2` | CPU scanner workers, integer 1–16. |
+| `exclude-rules` | *(empty)* | Optional, newline/comma-separated rule ids passed as literal `--exclude-rule` arguments (flag verified inside the pinned image). Each id must match `[a-zA-Z0-9._-]+`; spaces, slashes, shell metacharacters and empty entries (blank lines, CRLF pairs, consecutive/leading/trailing separators) are rejected before Docker runs. Use only for KNOWN-broken registry rules (e.g. `yaml.github-actions.security.curl-eval.curl-eval` re-parsing `run:` blocks as Bash and false-positive on every `${{ }}` expression). This is rule-scoped diagnostic exclusion, not findings suppression: scanner/config/report failures stay red, and excluding every applicable rule still fails the gate (`No rules loaded`). Unknown rule ids are ignored by the scanner without diagnostic, so an unused id is visible only in the scan log, never as a failure. |
 
 **Initial rollout policy (operator decision, 2026-11-18):** report findings
 first, then remediate product issues separately. The default remains
