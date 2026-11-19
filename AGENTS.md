@@ -90,6 +90,6 @@ Zet de oude mappen niet zomaar weg terwijl er nog een runner op draait.
 
 ## Taal & communicatie
 
-De gebruiker communiceert primair in het Nederlands. Antwoorden en
-commit-berichten mogen; houd de repo zelf (README, comments, commit-berichten)
-in het Engels of Nederlands — wees consistent per bestand.
+Reply in the operator's language (Dutch by default). New or changed project
+artifacts, documentation, comments and commit messages must be in English.
+Do not translate unrelated existing content.

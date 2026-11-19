@@ -1,86 +1,248 @@
-## Reusable workflow — Semgrep SAST (self-hosted pool, gratis op élke repo)
-#
-# Semgrep Core is open-source (LGPL) en gratis — ook op prive-repos, in
-# tegenstelling tot CodeQL. Dit is de standaard security-scan voor projecten
-# waar CodeQL niet gratis kan (prive-repos); op publieke repos kun je ook
-# CodeQL gebruiken.
-#
-#   jobs:
-#     semgrep:
-#       uses: m0nklabs/github-action-runners/.github/workflows/semgrep-ci.yml@main
-#       with:
-#         config: auto   # of: p/security-audit, p/python, een URL, etc.
-#       secrets: inherit
-#
-# Loopt op de centrale self-hosted pool: [self-hosted, Linux].
-
+# One digest-pinned OSS scan; the gate reads the exact SARIF uploaded as an
+# ordinary Actions artifact. Registry rules are live, not pinned by the image.
 name: Semgrep SAST (shared)
 
 on:
   workflow_call:
     inputs:
       config:
-        description: "Semgrep ruleset(s), space-separated: auto, p/security-audit, p/best-practices, p/<lang>, a file/URL"
+        description: 'Space-separated Semgrep configs (shell quoting supported); no shell evaluation'
         required: false
-        default: auto
+        default: p/default
         type: string
       src-dir:
-        description: Directory to scan
+        description: Directory within the checkout to scan (and resolve local configs from)
         required: false
-        default: "."
+        default: '.'
         type: string
       fail-on:
-        description: "Fail the job on findings: 'none' (always green), 'error', 'warning'"
+        description: 'Finding threshold: error, warning (includes error), or none; scanner failures always fail'
         required: false
         default: none
         type: string
-      output-format:
-        description: "terminal, json, sarif"
+      runs-on:
+        description: 'JSON runner labels available to the caller; never provisions runners'
         required: false
-        default: terminal
+        default: '["self-hosted", "Linux", "X64"]'
         type: string
+      timeout-minutes:
+        description: Maximum job duration in minutes
+        required: false
+        default: 20
+        type: number
+      engine-timeout-seconds:
+        description: Maximum seconds per rule per file (integer 1–120); scanner timeouts still fail
+        required: false
+        default: 30
+        type: number
+      scan-jobs:
+        description: Number of parallel scanner workers (CPU only)
+        required: false
+        default: 2
+        type: number
 
 permissions:
   contents: read
 
 jobs:
   semgrep:
-    name: Semgrep scan (${{ inputs.config }})
-    runs-on: [self-hosted, Linux]
+    name: Semgrep
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    env:
+      # Semgrep OSS 1.184.0; reused from m0nklabs/lastsync.
+      SEMGREP_IMAGE: semgrep/semgrep@sha256:cc1b68266f267878b39739373ea9985b9a78e5d64497dd875c8de100b22695ed
+      REPORT_NAME: semgrep-${{ github.run_id }}-${{ github.run_attempt }}
+      SEMGREP_CONFIG: ${{ inputs.config }}
+      SEMGREP_SRC_DIR: ${{ inputs.src-dir }}
+      SEMGREP_FAIL_ON: ${{ inputs.fail-on }}
+      SEMGREP_JOBS: ${{ inputs.scan-jobs }}
+      SEMGREP_ENGINE_TIMEOUT_SECONDS: ${{ inputs.engine-timeout-seconds }}
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Semgrep (venv, gratis/open-source)
-        run: |
-          # host-python (homebrew) is PEP 668 externally-managed: pip system-wide
-          # weigert. Installeer semgrep in een schrijfbaar venv in de runner
-          # tool-cache i.p.v. het systeem te vervuilen.
-          VENV="$RUNNER_TOOL_CACHE/semgrep-venv"
-          python3 -m venv "$VENV"
-          "$VENV/bin/pip" install --quiet --upgrade semgrep
-          "$VENV/bin/semgrep" --version
-          echo "$VENV/bin" >> "$GITHUB_PATH"
-
-      - name: Run Semgrep
-        working-directory: ${{ inputs.src-dir }}
-        env:
-          SEMGREP_RULES: ${{ inputs.config }}
-          SEMGREP_FAIL_ON: ${{ inputs.fail-on }}
-        run: |
-          if [ "$SEMGREP_FAIL_ON" = "none" ]; then
-            semgrep scan --config "$SEMGREP_RULES" --error || echo "Semgrep-findings gevonden (niet-falend per configuratie)."
-          else
-            semgrep scan --config "$SEMGREP_RULES" --error -q --fail-on "$SEMGREP_FAIL_ON"
-          fi
-        continue-on-error: true
-
-      - name: Semgrep JSON artifact
-        if: always()
-        run: |
-          semgrep scan --config "${{ inputs.config }}" --json > semgrep-results.json 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          name: semgrep-results
-          path: semgrep-results.json
-          if-no-files-found: ignore
+          persist-credentials: false
+
+      - name: Scan once (all severities, SARIF and coverage JSON)
+        shell: bash
+        run: |
+          # Isolated Python cannot import scripts/modules from the target repo.
+          python3 -I - <<'PY'
+          # BEGIN SCAN HELPER
+          import os
+          import shlex
+          import subprocess
+          from pathlib import Path
+
+          if os.environ['SEMGREP_FAIL_ON'] not in ('none', 'error', 'warning'):
+              raise SystemExit('Invalid fail-on: expected none, error, or warning')
+          configs = shlex.split(os.environ['SEMGREP_CONFIG'])
+          if not configs or any(not item.strip() for item in configs):
+              raise SystemExit('At least one nonempty Semgrep config is required')
+          jobs = os.environ['SEMGREP_JOBS']
+          if not jobs.isdecimal() or not 1 <= int(jobs) <= 16:
+              raise SystemExit('scan-jobs must be an integer between 1 and 16')
+          engine_timeout = os.environ['SEMGREP_ENGINE_TIMEOUT_SECONDS']
+          if not (engine_timeout.isascii() and engine_timeout.isdecimal()
+                  and 1 <= int(engine_timeout) <= 120):
+              raise SystemExit('engine-timeout-seconds must be an integer between 1 and 120')
+          workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve(strict=True)
+          requested = Path(os.environ['SEMGREP_SRC_DIR'])
+          source = (workspace / requested).resolve(strict=True)
+          if requested.is_absolute() or not source.is_relative_to(workspace) or not source.is_dir():
+              raise SystemExit('src-dir must be a directory inside the checkout')
+          relative = source.relative_to(workspace).as_posix()
+          report_dir = (Path(os.environ['RUNNER_TEMP']) / os.environ['REPORT_NAME'])
+          # No exist_ok: a stale report must never certify a new attempt.
+          report_dir.mkdir(mode=0o700)
+          command = [
+              'docker', 'run', '--rm', '--cap-drop=ALL',
+              '--security-opt=no-new-privileges',
+              '--user', f'{os.getuid()}:{os.getgid()}', '-e', 'HOME=/tmp',
+              '-v', f'{workspace}:/src:ro', '-v', f'{report_dir}:/out',
+              '-w', f'/src/{relative}', os.environ['SEMGREP_IMAGE'],
+              'semgrep', 'scan', '--oss-only', '--strict', '--metrics=off',
+              '--disable-version-check', f'--jobs={jobs}', f'--timeout={engine_timeout}',
+              '--sarif', '--output=/out/semgrep.sarif',
+              '--json-output=/out/semgrep.json',
+          ]
+          command.extend(f'--config={config}' for config in configs)
+          command.append('.')
+          # Findings do not affect this exit status; scanner/config/runtime errors do.
+          # No --error, second scan, pip installation, or target-repo execution.
+          subprocess.run(command, check=True)
+          # END SCAN HELPER
+          PY
+
+      - name: Upload same-run reports (not GitHub Code Scanning)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: semgrep-report
+          path: |
+            ${{ runner.temp }}/${{ env.REPORT_NAME }}/semgrep.sarif
+            ${{ runner.temp }}/${{ env.REPORT_NAME }}/semgrep.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Validate coverage and gate the same SARIF
+        # Evaluate even after a scan/upload failure; earlier failures remain red.
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          python3 -I - <<'PY'
+          # BEGIN REPORT GATE
+          import json
+          import os
+          from pathlib import Path
+
+          def require(condition, message):
+              if not condition:
+                  raise ValueError(message)
+
+          def object_(value, label):
+              require(isinstance(value, dict), f'Malformed {label}: expected object')
+              return value
+
+          def array(value, label):
+              require(isinstance(value, list), f'Malformed {label}: expected array')
+              return value
+
+          def level(value):
+              require(value in ('none', 'note', 'warning', 'error'), 'Invalid SARIF severity')
+              return value
+
+          def validate():
+              threshold = os.environ['SEMGREP_FAIL_ON']
+              require(threshold in ('none', 'error', 'warning'), 'Invalid fail-on')
+              directory = (Path(os.environ['RUNNER_TEMP']) / os.environ['REPORT_NAME'])
+              sarif = object_(json.loads((directory / 'semgrep.sarif').read_text()), 'SARIF')
+              require(sarif.get('version') == '2.1.0', 'Unexpected SARIF version')
+              runs = array(sarif.get('runs'), 'runs')
+              require(bool(runs), 'Missing SARIF runs')
+              counts = dict.fromkeys(('none', 'note', 'warning', 'error'), 0)
+              suppressed_count = rule_count = 0
+              for run in runs:
+                  run = object_(run, 'run')
+                  driver = object_(object_(run.get('tool'), 'tool').get('driver'), 'driver')
+                  require(driver.get('name') == 'Semgrep OSS', 'Unexpected SARIF driver')
+                  require(driver.get('semanticVersion') == '1.184.0', 'Unexpected SARIF engine version')
+                  rules = array(driver.get('rules'), 'rules')
+                  require(bool(rules), 'No rules loaded; not a clean scan')
+                  by_id = {}
+                  for rule in rules:
+                      rule = object_(rule, 'rule')
+                      rule_id = rule.get('id')
+                      require(isinstance(rule_id, str) and bool(rule_id), 'Missing rule id')
+                      require(rule_id not in by_id, 'Duplicate rule id')
+                      default = object_(rule.get('defaultConfiguration', {}), 'defaultConfiguration')
+                      by_id[rule_id] = level(default.get('level', 'warning'))
+                  rule_count += len(rules)
+                  invocations = array(run.get('invocations'), 'invocations')
+                  require(bool(invocations), 'Missing scanner execution status')
+                  for invocation in invocations:
+                      invocation = object_(invocation, 'invocation')
+                      require(invocation.get('executionSuccessful') is True, 'Scanner execution unsuccessful')
+                      for key in ('toolExecutionNotifications', 'toolConfigurationNotifications'):
+                          for notice in array(invocation.get(key, []), key):
+                              notice = object_(notice, 'notification')
+                              require(level(notice.get('level', 'warning')) not in ('warning', 'error'),
+                                      'Scanner reported a warning/error diagnostic')
+                  for result in array(run.get('results'), 'results'):
+                      result = object_(result, 'result')
+                      message = object_(result.get('message'), 'result message')
+                      require(isinstance(message.get('text'), str), 'Missing result message text')
+                      rule_id = result.get('ruleId')
+                      require(isinstance(rule_id, str) and rule_id in by_id, 'Unknown result rule')
+                      severity = level(result.get('level', by_id[rule_id]))
+                      suppressed = False
+                      for suppression in array(result.get('suppressions', []), 'suppressions'):
+                          suppression = object_(suppression, 'suppression')
+                          require(suppression.get('kind') in ('inSource', 'external'), 'Invalid suppression kind')
+                          require(suppression.get('status') in (None, 'accepted', 'underReview', 'rejected'),
+                                  'Invalid suppression status')
+                          # Semgrep retains nosemgrep results in SARIF. Honor only in-source suppressions.
+                          suppressed |= (suppression['kind'] == 'inSource'
+                                         and suppression.get('status') in (None, 'accepted'))
+                      if suppressed:
+                          suppressed_count += 1
+                      else:
+                          counts[severity] += 1
+              # This is coverage metadata from the SAME invocation, never a second scan.
+              coverage = object_(json.loads((directory / 'semgrep.json').read_text()), 'coverage JSON')
+              require(coverage.get('version') == '1.184.0', 'Unexpected scanner JSON version')
+              for result in array(coverage.get('results'), 'JSON results'):
+                  object_(result, 'JSON result')
+              require(array(coverage.get('errors'), 'scanner errors') == [], 'Scanner reported errors')
+              paths = object_(coverage.get('paths'), 'paths')
+              scanned = array(paths.get('scanned'), 'scanned paths')
+              require(all(isinstance(path, str) and path for path in scanned), 'Invalid scanned paths')
+              require(bool(scanned), 'NO TARGETS SCANNED: unsupported, ignored, or no applicable rules; not clean')
+              blocked = counts['error'] if threshold != 'none' else 0
+              if threshold == 'warning':
+                  blocked += counts['warning']
+              summary = (
+                  f"Semgrep: {len(scanned)} files scanned; {rule_count} rules loaded; "
+                  f"{counts['error']} ERROR, {counts['warning']} WARNING, {counts['note']} INFO; "
+                  f"{suppressed_count} in-source suppressed. Gate: {threshold}; blocking: {blocked}."
+              )
+              print(summary)
+              print('Coverage status: LIMITED to applicable OSS rules/parsers; language coverage is NOT CERTIFIED. '
+                    'Generic rules may count unsupported-language files as scanned. '
+                    'Inspect scan logs and semgrep.json for exclusions and diagnostics.')
+              if os.environ.get('GITHUB_STEP_SUMMARY'):
+                  with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+                      output.write(summary + '\n\n**Coverage: LIMITED; language coverage NOT CERTIFIED.** '
+                                   'Generic rules may count unsupported-language files as scanned. '
+                                   'Inspect scan logs and JSON for scope/exclusions. '
+                                   'Reports are ordinary Actions artifacts; no Code Scanning upload.\n')
+              return 1 if blocked else 0
+
+          try:
+              raise SystemExit(validate())
+          except (OSError, ValueError, TypeError, KeyError) as error:
+              # JSON-escape untrusted diagnostics to avoid workflow-command injection.
+              print('Semgrep report validation FAILED: ' + json.dumps(str(error)))
+              raise SystemExit(2)
+          # END REPORT GATE
+          PY

@@ -129,7 +129,7 @@ Beschikbare reusable workflows (in `.github/workflows/`):
 | `swift-ci.yml` | Swift | swift build + test |
 | `gpu-ci.yml` | (GPU) | GPU-tests, serieel via `gpu-run.sh` |
 | `codeql-ci.yml` | (CodeQL) | SAST security-scan per taal — **gratis op publieke repos** (`c-cpp`, `csharp`, `go`, `java-kotlin`, `javascript-typescript`, `python`, `ruby`, `swift`) |
-| `semgrep-ci.yml` | (SAST) | **Gratis security-scan op élke repo (publiek + privé)** via Semgrep Core (open-source). `config: auto` scant alle talen, resultaat als JSON-artifact. Werkt waar CodeQL niet gratis kan (privé). |
+| `semgrep-ci.yml` | (SAST) | **Private/public SAST** via one digest-pinned Semgrep OSS scan. Defaults: `config: p/default`, report-only findings; SARIF + coverage JSON as ordinary Actions artifacts, not Code Scanning. See [Semgrep contract](#semgrep-contract-and-rollout). |
 | `dod-check.yml` | (proces) | **Definition of Done uit het MoniFuse-registry** uitvoeren (`mode: run`) of de laatste uitslag ophalen (`mode: report`), en die als PR-commentaar plaatsen; rode DoD laat de check falen. Caller moet `permissions: pull-requests: write` zetten. De admin-token komt lokaal van de runner (`~/.secrets/monifuse-admin.token`), nooit uit GitHub. |
 | `codeql-detect.yml` | (CodeQL auto) | CodeQL met **automatische taal-detectie** (via GitHub languages API, met percentages) — geen handmatige `languages`-input |
 
@@ -225,12 +225,97 @@ met betaald Advanced Security (de CodeQL Terms verbieden gebruik op niet-
 open-source-codebases zonder die licentie). Daarom:
 - Publieke repos → draaien `codeql-detect.yml`/`codeql-ci.yml` (gratis) en/of
   `semgrep-ci.yml`.
-- Privé-repos → al het CI-gemak blijft (gratis) en **SAST via `semgrep-ci.yml`**
-  is ook gratis. **`semgrep-ci.yml` is de standaard security-scan op élke repo
-  (publiek én privé):** Semgrep Core is open-source (LGPL) en heeft geen
-  GitHub-licentie nodig. Het scant automatisch alle talen via `config: auto`,
-  en slaat de resultaten op als JSON-artifact. Alleen echte CodeQL op privé
-  blijft betaald (Advanced Security); voor gratis SAST dataft Semgrep de rol.
+- Private repositories can use **`semgrep-ci.yml`** without GitHub Code Scanning
+  entitlement. It runs Semgrep OSS and uploads ordinary Actions artifacts; it
+  never calls the Code Scanning API. Runner access and any hosted Actions
+  minutes are separate requirements, not granted by calling a public workflow.
+
+### Semgrep contract and rollout
+
+See [`examples/semgrep.example.yml`](examples/semgrep.example.yml) for triggers,
+weekly scheduling, fork policy and permissions. The reusable workflow declares
+only `contents: read`, requires no secrets, disables persisted checkout
+credentials, and does not install dependencies or execute target-repository
+scripts. Both Python helpers are inline in the reusable workflow and run with
+`python3 -I`; they are not loaded from the caller's checkout. The scanner gets a
+read-only checkout mount, no Docker socket, no inherited token, and a fresh
+runner-owned report directory per run attempt. No GPU is used.
+
+| Input | Default | Contract |
+| --- | --- | --- |
+| `config` | `p/default` | One or more space-separated Semgrep configs; quote paths with spaces. Each becomes a literal `--config` argument, without shell evaluation. Local paths resolve from `src-dir`. `auto`, registry IDs, URLs and local rule files remain supported by the scanner. |
+| `src-dir` | `.` | Existing directory inside the checkout. Absolute paths and symlink/path escapes are rejected. The scan and both reports use this same scope. |
+| `fail-on` | `none` | `error` blocks unsuppressed ERROR findings; `warning` blocks WARNING + ERROR; `none` disables **only the finding threshold**. Invalid values and all scanner/config/runtime/report/coverage failures are always red. |
+| `runs-on` | `["self-hosted", "Linux", "X64"]` | JSON runner labels evaluated with `fromJSON`. Select only runners accessible to the caller. No runner registration is performed. |
+| `timeout-minutes` | `20` | Job timeout; includes image retrieval and scanning. |
+| `engine-timeout-seconds` | `30` | Maximum seconds per rule per file (`--timeout`), integer 1–120. Zero/unlimited, fractions and invalid values are rejected before Docker runs. |
+| `scan-jobs` | `2` | CPU scanner workers, integer 1–16. |
+
+**Initial rollout policy (operator decision, 2026-11-18):** report findings
+first, then remediate product issues separately. The default remains
+`fail-on: none`: findings are visible in the reports and summary, but do not
+block scanner installation. Operational failures are always red. Repositories
+can explicitly select `error` or `warning` after their findings are triaged.
+
+**Behavior changes:** the default ruleset is explicitly `p/default` rather
+than `auto`. The unused `output-format` input has been removed: output is
+always SARIF plus JSON. Remove that input from any older caller rather than
+expecting it to change output. `config`, `src-dir` and `fail-on` remain
+supported. Existing `fail-on: none` callers cannot mask scanner failures.
+Initial rollout callers should explicitly use `fail-on: none` and omit
+`secrets: inherit`.
+
+The single scan uses Semgrep OSS **1.184.0**, pinned to the same Docker digest as
+`m0nklabs/lastsync`. It emits `semgrep.sarif` and `semgrep.json` together, uploaded
+as `semgrep-report` (30-day retention). A gate reads **that exact SARIF**, across
+all runs, honoring result-level severity before rule defaults and existing
+in-source `nosemgrep` suppressions (counted visibly). There is no second scan,
+`--error` gate, mutable pip upgrade, or failure-masking step. Strict scanner
+diagnostics, missing/malformed reports, unsuccessful invocations, empty rule
+sets and zero scanned targets all fail closed, even with `fail-on: none`.
+
+The engine budget is separate from the job timeout: Semgrep 1.184.0 defaults
+upstream to 5 seconds per rule per file; this workflow explicitly allows 30
+seconds for complex first-party files. A caller can set, for example,
+`engine-timeout-seconds: 60` after investigating a timeout. The unchanged
+upstream timeout threshold skips a file after 3 timed-out rules. Any remaining
+`Timeout` diagnostic still fails both the strict scan and report gate, including
+in report-first mode; raising the budget is not a coverage guarantee or an
+excuse to suppress diagnostics/exclude source. The job timeout remains the
+outer limit for the whole scan.
+
+Coverage is **not** a promise to analyze every language or file. The same-run
+JSON must contain scanned targets; zero targets (for example, an unsupported
+or fully ignored scope with no applicable rules) is explicitly red, not a clean
+scan. Generic/regex rules can count an otherwise unsupported-language file as
+scanned; that is not language-specific analysis. In a mixed-language repo, a
+scanned file count is not proof that every language was covered. Inspect scanner logs,
+`paths.scanned`, errors, ignore rules and applicable OSS rules/parsers before
+claiming language coverage. File-size limits and exclusions can reduce coverage.
+`--strict` treats scanner warnings as failures. Registry rules are live and may
+change independently of the pinned engine; the image digest does not pin
+`p/default` or other registry configs. Registry rule licenses are separate from
+the OSS engine license.
+
+The host needs Docker, Python 3.9+ and registry connectivity. Org runners do not
+automatically serve personal repositories. Do not select GitHub-hosted labels
+for private repositories without a separate minutes/billing decision, or install
+callers that will queue indefinitely without accessible runners. Untrusted fork
+PRs require an isolated runner policy; the example skips them explicitly, not as
+successful scans. Never use `pull_request_target` to run this checkout.
+
+Pin rollout callers to the reviewed shared commit and verify in a dedicated
+sandbox before activation. Do not create test PRs in production repositories.
+
+Local regression checks (stdlib only; helpers extracted verbatim from YAML):
+
+```bash
+python3 -m unittest discover -s tests -v
+# Optional synthetic integration cases using the pinned image, no project code:
+SEMGREP_CONTAINER_TESTS=1 python3 -m unittest discover -s tests -v
+# If installed:
+actionlint .github/workflows/semgrep-ci.yml examples/semgrep.example.yml
+```
 
 ---
 
